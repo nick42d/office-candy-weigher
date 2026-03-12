@@ -1,0 +1,32 @@
+[package]
+edition = "2024"
+name = "pi-test"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+defmt = "1.0"
+display-interface-spi = "0.5.0"
+embedded-graphics = "0.8.1"
+mipidsi = "0.9.0"
+defmt-rtt = "1.1"
+panic-probe = { version = "1.0", features = ["print-defmt"] }
+cortex-m-rt = "0.7.5"
+
+embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
+embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-rp = { version = "0.9.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-sync = { version = "0.7.2", features = ["defmt"] }
+embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-futures = "0.1.2"
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = 'z'
+
+[profile.dev]
+debug = 2
+lto = true
+opt-level = "z"
