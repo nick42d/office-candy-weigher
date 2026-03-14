@@ -11,6 +11,7 @@ use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
 use embassy_time::Delay;
 use embedded_graphics::{
     framebuffer::Framebuffer,
+    image::ImageDrawable,
     pixelcolor::{
         raw::{BigEndian, RawU16},
         Rgb565,
@@ -130,6 +131,10 @@ impl<'a> PimoriDisplayController<'a> {
             .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
             .map(RawU16::new)
             .map(Rgb565::from);
+
+        let image = self.framebuffer.as_image().draw(&mut self.display);
+        core::todo!("Evaluate alternate draw mechanism above");
+
         self.display
             .set_pixels(0, 0, DISPLAY_W - 1, DISPLAY_H - 1, pixels)
             .unwrap();
