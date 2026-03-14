@@ -1,7 +1,9 @@
 use crate::{Message, CHANNEL_SIZE};
 use embassy_rp::gpio::{Input, Pull};
-use embassy_rp::peripherals::{PIN_12, PIN_13, PIN_14, PIN_15};
-use embassy_rp::Peri;
+use embassy_rp::peripherals::{PIN_12, PIN_13, PIN_14, PIN_15, PIN_26, PIN_27, PIN_28, PIO0};
+use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::pio_programs::rotary_encoder::{Direction, PioEncoder, PioEncoderProgram};
+use embassy_rp::{bind_interrupts, Peri};
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_time::Duration;
@@ -55,7 +57,7 @@ async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
 }
 
 #[embassy_executor::task]
-pub async fn hx710_load_cell_manager(
+pub async fn hx710_load_cell_manager_simulated(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     const TEST_WEIGHT_DATA: &[(f32, Duration)] = &[
@@ -76,5 +78,34 @@ pub async fn hx710_load_cell_manager(
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
         tx.send(Message::WeightUpdate(*weight)).await;
         embassy_time::Timer::after(*duration).await;
+    }
+}
+
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
+
+#[embassy_executor::task]
+pub async fn hx710_load_cell_manager_rotary_encoder(
+    pin26: Peri<'static, PIN_26>,
+    pin27: Peri<'static, PIN_27>,
+    // pin28: Peri<'static, PIN_28>,
+    pio0: Peri<'static, PIO0>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+) {
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(pio0, Irqs);
+    let program = PioEncoderProgram::new(&mut common);
+    let mut encoder = PioEncoder::new(&mut common, sm0, pin26, pin27, &program);
+
+    let mut base_weight = 0.0;
+    loop {
+        let direction = encoder.read().await;
+        match direction {
+            Direction::Clockwise => base_weight += 2.5,
+            Direction::CounterClockwise => base_weight -= 2.5,
+        }
+        tx.send(Message::WeightUpdate(base_weight)).await;
     }
 }
