@@ -2,18 +2,18 @@ use core::cell::RefCell;
 
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
+    Peri,
     gpio::{Level, Output},
     peripherals::{PIN_16, PIN_17, PIN_20, SPI0},
     spi::{self, Blocking, Spi},
-    Peri,
 };
-use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
+use embassy_sync::blocking_mutex::{Mutex, raw::NoopRawMutex};
 use embassy_time::Delay;
 use mipidsi::{
+    Builder, Display, NoResetPin,
     interface::SpiInterface,
     models::ST7789,
     options::{Orientation, Rotation},
-    Builder, Display, NoResetPin,
 };
 
 pub const DISPLAY_FREQ: u32 = 16_000_000;

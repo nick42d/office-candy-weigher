@@ -1,7 +1,7 @@
-use crate::{Message, CHANNEL_SIZE};
+use crate::{CHANNEL_SIZE, Message};
+use embassy_rp::Peri;
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{PIN_12, PIN_13, PIN_14, PIN_15};
-use embassy_rp::Peri;
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 

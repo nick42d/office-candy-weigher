@@ -1,6 +1,6 @@
+use embassy_rp::Peri;
 use embassy_rp::peripherals::{PIN_6, PIN_7, PIN_8, PWM_SLICE3, PWM_SLICE4};
 use embassy_rp::pwm::{self, Pwm};
-use embassy_rp::Peri;
 
 pub struct Percentage(pub u16);
 
