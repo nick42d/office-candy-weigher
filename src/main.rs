@@ -47,7 +47,7 @@ async fn main(spawner: Spawner) {
     let spi_bus = Mutex::new(RefCell::new(spi));
     let mut display_buffer = [0u8; 512];
 
-    let mut display_led_controller = PimoriDisplayRgbLedController::new(
+    let _display_led_controller = PimoriDisplayRgbLedController::new(
         peripherals.PWM_SLICE3,
         peripherals.PWM_SLICE4,
         peripherals.PIN_6,

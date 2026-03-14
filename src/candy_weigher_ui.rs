@@ -5,7 +5,7 @@ use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{
-    Arc, Circle, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StyledDrawable,
+    Arc, Circle, PrimitiveStyle,
 };
 use embedded_graphics::text::Text;
 
