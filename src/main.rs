@@ -5,11 +5,11 @@ use crate::pimori_display::PimoriDisplayController;
 use crate::pimori_display_leds::{Percentage, PimoriDisplayRgbLedController};
 use crate::round_robin_select::{round_robin_select3, PollFirst3};
 use crate::state::{LedState, MomentaryButtonState, State};
+use crate::tasks::pico_display_button_a_manager;
 use crate::tasks::{
     hx710_load_cell_manager_rotary_encoder, pico_display_button_b_manager,
     pico_display_button_x_manager, pico_display_button_y_manager,
 };
-use crate::{candy_weigher_ui::DisplayState, tasks::pico_display_button_a_manager};
 use core::cell::RefCell;
 use defmt::*;
 use embassy_executor::Spawner;
@@ -18,7 +18,7 @@ use embassy_rp::spi::{Config, Spi};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Instant};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -48,10 +48,12 @@ async fn main(spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
     info!("Peripherals initialised");
 
-    let spi = Spi::new_blocking_txonly(
+    // TODO: Consider if interrupt handler needs to be set up for DMA_CH0
+    let spi = Spi::new_txonly(
         peripherals.SPI0,
         peripherals.PIN_18,
         peripherals.PIN_19,
+        peripherals.DMA_CH0,
         Config::default(),
     );
     let spi_bus = Mutex::new(RefCell::new(spi));

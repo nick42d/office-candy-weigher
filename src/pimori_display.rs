@@ -4,14 +4,13 @@ use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
     gpio::{Level, Output},
     peripherals::{PIN_16, PIN_17, PIN_20, SPI0},
-    spi::{self, Blocking, Spi},
+    spi::{self, Async, Spi},
     Peri,
 };
 use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
-use embassy_time::Delay;
+use embassy_time::{Delay, Instant};
 use embedded_graphics::{
     framebuffer::Framebuffer,
-    image::ImageDrawable,
     pixelcolor::{
         raw::{BigEndian, RawU16},
         Rgb565,
@@ -32,15 +31,13 @@ pub const DISPLAY_W_AS_USIZE: usize = DISPLAY_W as usize;
 pub const DISPLAY_PX: usize = DISPLAY_H_AS_USIZE * DISPLAY_W_AS_USIZE;
 pub const DISPLAY_BYTES: usize = DISPLAY_PX * 2;
 
+type Spi0<'a> = Spi<'a, SPI0, Async>;
 type PimoriDisplay<'a> = Display<
-    SpiInterface<
-        'a,
-        SpiDeviceWithConfig<'a, NoopRawMutex, Spi<'a, SPI0, Blocking>, Output<'a>>,
-        Output<'a>,
-    >,
+    SpiInterface<'a, SpiDeviceWithConfig<'a, NoopRawMutex, Spi0<'a>, Output<'a>>, Output<'a>>,
     ST7789,
     NoResetPin,
 >;
+
 pub struct PimoriDisplayController<'a> {
     display: PimoriDisplay<'a>,
     framebuffer: Framebuffer<
@@ -58,7 +55,7 @@ impl<'a> PimoriDisplayController<'a> {
         pin16: Peri<'a, PIN_16>,
         pin17: Peri<'a, PIN_17>,
         pin20: Peri<'a, PIN_20>,
-        spi_bus: &'a Mutex<NoopRawMutex, RefCell<Spi<'a, SPI0, Blocking>>>,
+        spi_bus: &'a Mutex<NoopRawMutex, RefCell<Spi0<'a>>>,
         buffer: &'a mut [u8; 512],
     ) -> Self {
         // Enable LCD backlight - required for screen to operate
@@ -101,10 +98,10 @@ impl<'a> PimoriDisplayController<'a> {
             framebuffer,
         }
     }
-    pub fn turn_off_backlight(&mut self) {
+    pub fn turn_off_display(&mut self) {
         self.backlight.set_low();
     }
-    pub fn turn_on_backlight(&mut self) {
+    pub fn turn_on_display(&mut self) {
         self.backlight.set_high();
     }
     pub fn draw_to_framebuffer(
@@ -123,7 +120,7 @@ impl<'a> PimoriDisplayController<'a> {
         draw_fn(&mut self.framebuffer)
     }
     pub fn flush_buffer_to_screen(&mut self) {
-        // TODO: DMA would be more efficient here.
+        // TODO: Use DMA here instead of synchronous write.
         let pixels = self
             .framebuffer
             .data()
@@ -132,9 +129,8 @@ impl<'a> PimoriDisplayController<'a> {
             .map(RawU16::new)
             .map(Rgb565::from);
 
-        let image = self.framebuffer.as_image().draw(&mut self.display);
-        core::todo!("Evaluate alternate draw mechanism above");
-
+        // Note - in testing this shaves off 15ms of 75ms compared to
+        // `self.framebuffer.as_image.draw(..)`
         self.display
             .set_pixels(0, 0, DISPLAY_W - 1, DISPLAY_H - 1, pixels)
             .unwrap();
