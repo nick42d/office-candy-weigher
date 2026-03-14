@@ -1,19 +1,17 @@
 use crate::pimori_display::{DISPLAY_H, DISPLAY_W};
 use core::fmt::Write;
-use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
+use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{
-    Arc, Circle, PrimitiveStyle,
-};
+use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
 
 pub struct DisplayState {
     pub scale_weight_g: f32,
     pub lolly_weight_g: f32,
     pub lolly_count: u32,
-    pub lolly_count_change: u32,
+    pub lolly_count_change: i32,
     pub t_l_pressed: bool,
     pub b_l_pressed: bool,
     pub t_r_pressed: bool,

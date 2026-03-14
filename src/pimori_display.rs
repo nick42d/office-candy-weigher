@@ -2,23 +2,34 @@ use core::cell::RefCell;
 
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
-    Peri,
     gpio::{Level, Output},
     peripherals::{PIN_16, PIN_17, PIN_20, SPI0},
     spi::{self, Blocking, Spi},
+    Peri,
 };
-use embassy_sync::blocking_mutex::{Mutex, raw::NoopRawMutex};
+use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
 use embassy_time::Delay;
+use embedded_graphics::{
+    framebuffer::Framebuffer,
+    pixelcolor::{
+        raw::{BigEndian, RawU16},
+        Rgb565,
+    },
+};
 use mipidsi::{
-    Builder, Display, NoResetPin,
     interface::SpiInterface,
     models::ST7789,
     options::{Orientation, Rotation},
+    Builder, Display, NoResetPin,
 };
 
 pub const DISPLAY_FREQ: u32 = 16_000_000;
 pub const DISPLAY_H: u16 = 135;
 pub const DISPLAY_W: u16 = 240;
+pub const DISPLAY_H_AS_USIZE: usize = DISPLAY_H as usize;
+pub const DISPLAY_W_AS_USIZE: usize = DISPLAY_W as usize;
+pub const DISPLAY_PX: usize = DISPLAY_H_AS_USIZE * DISPLAY_W_AS_USIZE;
+pub const DISPLAY_BYTES: usize = DISPLAY_PX * 2;
 
 type PimoriDisplay<'a> = Display<
     SpiInterface<
@@ -31,6 +42,14 @@ type PimoriDisplay<'a> = Display<
 >;
 pub struct PimoriDisplayController<'a> {
     display: PimoriDisplay<'a>,
+    framebuffer: Framebuffer<
+        Rgb565,
+        RawU16,
+        BigEndian,
+        DISPLAY_W_AS_USIZE,
+        DISPLAY_H_AS_USIZE,
+        DISPLAY_BYTES,
+    >,
     backlight: Output<'a>,
 }
 impl<'a> PimoriDisplayController<'a> {
@@ -56,7 +75,7 @@ impl<'a> PimoriDisplayController<'a> {
         display_config.polarity = spi::Polarity::IdleHigh;
 
         // SPI device for display
-        let display_spi = SpiDeviceWithConfig::new(&spi_bus, display_spi_cs, display_config);
+        let display_spi = SpiDeviceWithConfig::new(spi_bus, display_spi_cs, display_config);
 
         // Display interface abstraction
         // TODO: consider lcd-async crate to use framebuffer approach.
@@ -73,7 +92,13 @@ impl<'a> PimoriDisplayController<'a> {
             .orientation(Orientation::new().rotate(Rotation::Deg90))
             .init(&mut Delay)
             .unwrap();
-        Self { display, backlight }
+
+        let framebuffer = Framebuffer::new();
+        Self {
+            display,
+            backlight,
+            framebuffer,
+        }
     }
     pub fn turn_off_backlight(&mut self) {
         self.backlight.set_low();
@@ -81,20 +106,32 @@ impl<'a> PimoriDisplayController<'a> {
     pub fn turn_on_backlight(&mut self) {
         self.backlight.set_high();
     }
-    pub fn draw(
+    pub fn draw_to_framebuffer(
         &mut self,
         draw_fn: impl FnOnce(
-            &mut Display<
-                SpiInterface<
-                    '_,
-                    SpiDeviceWithConfig<'_, NoopRawMutex, Spi<'a, SPI0, Blocking>, Output<'_>>,
-                    Output<'_>,
-                >,
-                ST7789,
-                NoResetPin,
+            &mut Framebuffer<
+                Rgb565,
+                RawU16,
+                BigEndian,
+                DISPLAY_W_AS_USIZE,
+                DISPLAY_H_AS_USIZE,
+                DISPLAY_BYTES,
             >,
         ),
     ) {
-        draw_fn(&mut self.display)
+        draw_fn(&mut self.framebuffer)
+    }
+    pub fn flush_buffer_to_screen(&mut self) {
+        // TODO: DMA would be more efficient here.
+        let pixels = self
+            .framebuffer
+            .data()
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .map(RawU16::new)
+            .map(Rgb565::from);
+        self.display
+            .set_pixels(0, 0, DISPLAY_W - 1, DISPLAY_H - 1, pixels)
+            .unwrap();
     }
 }

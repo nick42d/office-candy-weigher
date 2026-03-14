@@ -1,6 +1,6 @@
-use embassy_rp::Peri;
 use embassy_rp::peripherals::{PIN_6, PIN_7, PIN_8, PWM_SLICE3, PWM_SLICE4};
 use embassy_rp::pwm::{self, Pwm};
+use embassy_rp::Peri;
 
 pub struct Percentage(pub u16);
 
@@ -36,7 +36,9 @@ impl<'a> PimoriDisplayRgbLedController<'a> {
         }
     }
     pub fn set_red(&mut self, brightness: Percentage) {
-        self.rg_conf.compare_a = 0xffff * brightness.0 / 1000;
+        self.rg_conf.compare_a = (0xffff * brightness.0 as usize / 100)
+            .try_into()
+            .unwrap_or(0xffff);
         self.rg_pwm_slice.set_config(&self.rg_conf);
     }
     pub fn red_on(&mut self) {
@@ -48,7 +50,9 @@ impl<'a> PimoriDisplayRgbLedController<'a> {
         self.rg_pwm_slice.set_config(&self.rg_conf);
     }
     pub fn set_green(&mut self, brightness: Percentage) {
-        self.rg_conf.compare_b = 0xffff * brightness.0 / 1000;
+        self.rg_conf.compare_b = (0xffff * brightness.0 as usize / 100)
+            .try_into()
+            .unwrap_or(0xffff);
         self.rg_pwm_slice.set_config(&self.rg_conf);
     }
     pub fn green_on(&mut self) {
@@ -60,8 +64,10 @@ impl<'a> PimoriDisplayRgbLedController<'a> {
         self.rg_pwm_slice.set_config(&self.rg_conf);
     }
     pub fn set_blue(&mut self, brightness: Percentage) {
-        self.rg_conf.compare_a = 0xffff * brightness.0 / 1000;
-        self.rg_pwm_slice.set_config(&self.rg_conf);
+        self.b_conf.compare_a = (0xffff * brightness.0 as usize / 100)
+            .try_into()
+            .unwrap_or(0xffff);
+        self.b_pwm_slice.set_config(&self.b_conf);
     }
     pub fn blue_on(&mut self) {
         self.b_conf.compare_a = 0xffff;
@@ -70,5 +76,10 @@ impl<'a> PimoriDisplayRgbLedController<'a> {
     pub fn blue_off(&mut self) {
         self.b_conf.compare_a = 0x0000;
         self.b_pwm_slice.set_config(&self.b_conf);
+    }
+    pub fn all_off(&mut self) {
+        self.red_off();
+        self.blue_off();
+        self.green_off();
     }
 }
