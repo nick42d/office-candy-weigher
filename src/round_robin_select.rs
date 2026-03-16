@@ -1,9 +1,43 @@
+//! Implementation of a select algorithm that uses some external state to poll
+//! futures in a round robin order.
+//!
+//! Note use of pin-project crate: This is used to allow the subfields of these
+//! futures to be directly polled (which requires them to be wrapped in pin,
+//! which pin-project handles safely for us).
 use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use defmt::info;
 use embassy_futures::select::{Either3, Either4};
+use pin_project::pin_project;
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[pin_project]
+pub struct RoundRobinSelect3<A, B, C> {
+    poll_first: PollFirst3,
+    #[pin]
+    a: A,
+    #[pin]
+    b: B,
+    #[pin]
+    c: C,
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+#[pin_project]
+pub struct RoundRobinSelect4<A, B, C, D> {
+    poll_first: PollFirst4,
+    #[pin]
+    a: A,
+    #[pin]
+    b: B,
+    #[pin]
+    c: C,
+    #[pin]
+    d: D,
+}
 
 #[derive(Copy, Clone, Debug)]
 pub enum PollFirst3 {
@@ -20,32 +54,25 @@ impl PollFirst3 {
         }
     }
 }
-pub fn round_robin_select3<A, B, C>(
-    poll_first: PollFirst3,
-    a: A,
-    b: B,
-    c: C,
-) -> RoundRobinSelect3<A, B, C>
-where
-    A: Future,
-    B: Future,
-    C: Future,
-{
-    RoundRobinSelect3 {
-        poll_first,
-        a,
-        b,
-        c,
+
+#[derive(Copy, Clone, Debug)]
+pub enum PollFirst4 {
+    A,
+    B,
+    C,
+    D,
+}
+impl PollFirst4 {
+    pub fn next(&mut self) {
+        match self {
+            PollFirst4::A => *self = PollFirst4::B,
+            PollFirst4::B => *self = PollFirst4::C,
+            PollFirst4::C => *self = PollFirst4::D,
+            PollFirst4::D => *self = PollFirst4::A,
+        }
     }
 }
-#[derive(Debug)]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct RoundRobinSelect3<A, B, C> {
-    poll_first: PollFirst3,
-    a: A,
-    b: B,
-    c: C,
-}
+
 impl<A, B, C> Future for RoundRobinSelect3<A, B, C>
 where
     A: Future,
@@ -55,10 +82,10 @@ where
     type Output = Either3<A::Output, B::Output, C::Output>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let a = unsafe { Pin::new_unchecked(&mut this.a) };
-        let b = unsafe { Pin::new_unchecked(&mut this.b) };
-        let c = unsafe { Pin::new_unchecked(&mut this.c) };
+        let this = self.project();
+        let a: Pin<&mut A> = this.a;
+        let b: Pin<&mut B> = this.b;
+        let c: Pin<&mut C> = this.c;
         match this.poll_first {
             PollFirst3::A => {
                 this.poll_first.next();
@@ -101,53 +128,6 @@ where
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum PollFirst4 {
-    A,
-    B,
-    C,
-    D,
-}
-impl PollFirst4 {
-    pub fn next(&mut self) {
-        match self {
-            PollFirst4::A => *self = PollFirst4::B,
-            PollFirst4::B => *self = PollFirst4::C,
-            PollFirst4::C => *self = PollFirst4::D,
-            PollFirst4::D => *self = PollFirst4::A,
-        }
-    }
-}
-pub fn round_robin_select4<A, B, C, D>(
-    poll_first: PollFirst4,
-    a: A,
-    b: B,
-    c: C,
-    d: D,
-) -> RoundRobinSelect4<A, B, C, D>
-where
-    A: Future,
-    B: Future,
-    C: Future,
-    D: Future,
-{
-    RoundRobinSelect4 {
-        poll_first,
-        a,
-        b,
-        c,
-        d,
-    }
-}
-#[derive(Debug)]
-#[must_use = "futures do nothing unless you `.await` or poll them"]
-pub struct RoundRobinSelect4<A, B, C, D> {
-    poll_first: PollFirst4,
-    a: A,
-    b: B,
-    c: C,
-    d: D,
-}
 impl<A, B, C, D> Future for RoundRobinSelect4<A, B, C, D>
 where
     A: Future,
@@ -226,5 +206,50 @@ where
             }
         }
         Poll::Pending
+    }
+}
+
+pub fn round_robin_select3<A, B, C>(
+    poll_first: &mut PollFirst3,
+    a: A,
+    b: B,
+    c: C,
+) -> RoundRobinSelect3<A, B, C>
+where
+    A: Future,
+    B: Future,
+    C: Future,
+{
+    let prev_poll_first = *poll_first;
+    poll_first.next();
+    RoundRobinSelect3 {
+        poll_first: prev_poll_first,
+        a,
+        b,
+        c,
+    }
+}
+
+pub fn round_robin_select4<A, B, C, D>(
+    poll_first: &mut PollFirst4,
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+) -> RoundRobinSelect4<A, B, C, D>
+where
+    A: Future,
+    B: Future,
+    C: Future,
+    D: Future,
+{
+    let prev_poll_first = *poll_first;
+    poll_first.next();
+    RoundRobinSelect4 {
+        poll_first: prev_poll_first,
+        a,
+        b,
+        c,
+        d,
     }
 }

@@ -1,5 +1,6 @@
 use core::cell::RefCell;
 
+use defmt::{debug, trace};
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
     gpio::{Level, Output},
@@ -32,14 +33,14 @@ pub const DISPLAY_PX: usize = DISPLAY_H_AS_USIZE * DISPLAY_W_AS_USIZE;
 pub const DISPLAY_BYTES: usize = DISPLAY_PX * 2;
 
 type Spi0<'a> = Spi<'a, SPI0, Async>;
-type PimoriDisplay<'a> = Display<
+type PimoroniDisplay<'a> = Display<
     SpiInterface<'a, SpiDeviceWithConfig<'a, NoopRawMutex, Spi0<'a>, Output<'a>>, Output<'a>>,
     ST7789,
     NoResetPin,
 >;
 
-pub struct PimoriDisplayController<'a> {
-    display: PimoriDisplay<'a>,
+pub struct PimoroniDisplayController<'a> {
+    display: PimoroniDisplay<'a>,
     framebuffer: Framebuffer<
         Rgb565,
         RawU16,
@@ -50,7 +51,7 @@ pub struct PimoriDisplayController<'a> {
     >,
     backlight: Output<'a>,
 }
-impl<'a> PimoriDisplayController<'a> {
+impl<'a> PimoroniDisplayController<'a> {
     pub fn new(
         pin16: Peri<'a, PIN_16>,
         pin17: Peri<'a, PIN_17>,
@@ -104,7 +105,23 @@ impl<'a> PimoriDisplayController<'a> {
     pub fn turn_on_display(&mut self) {
         self.backlight.set_high();
     }
-    pub fn draw_to_framebuffer(
+    pub fn draw_via_framebuffer(
+        &mut self,
+        draw_fn: impl FnOnce(
+            &mut Framebuffer<
+                Rgb565,
+                RawU16,
+                BigEndian,
+                DISPLAY_W_AS_USIZE,
+                DISPLAY_H_AS_USIZE,
+                DISPLAY_BYTES,
+            >,
+        ),
+    ) {
+        draw_fn(&mut self.framebuffer);
+        self.flush_buffer_to_screen();
+    }
+    fn draw_to_framebuffer(
         &mut self,
         draw_fn: impl FnOnce(
             &mut Framebuffer<
@@ -119,7 +136,8 @@ impl<'a> PimoriDisplayController<'a> {
     ) {
         draw_fn(&mut self.framebuffer)
     }
-    pub fn flush_buffer_to_screen(&mut self) {
+    fn flush_buffer_to_screen(&mut self) {
+        debug!("Flushing framebuffer to screen");
         // TODO: Use DMA here instead of synchronous write.
         let pixels = self
             .framebuffer

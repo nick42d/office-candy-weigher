@@ -1,10 +1,13 @@
 #![no_std]
 #![no_main]
 
-use crate::pimori_display::PimoriDisplayController;
-use crate::pimori_display_leds::{Percentage, PimoriDisplayRgbLedController};
+use crate::config_consts::{
+    MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME, TOTAL_LED_FADEOUT_STEPS,
+};
+use crate::pimoroni_display::PimoroniDisplayController;
+use crate::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController};
 use crate::round_robin_select::{round_robin_select3, PollFirst3};
-use crate::state::{LedState, MomentaryButtonState, State};
+use crate::state::{output_state, LedState, MomentaryButtonState, State};
 use crate::tasks::pico_display_button_a_manager;
 use crate::tasks::{
     hx710_load_cell_manager_rotary_encoder, pico_display_button_b_manager,
@@ -18,18 +21,29 @@ use embassy_rp::spi::{Config, Spi};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Instant};
+use embassy_time::Instant;
 
 use {defmt_rtt as _, panic_probe as _};
 
 const CHANNEL_SIZE: usize = 16;
-const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
 
 static CHANNEL: Channel<ThreadModeRawMutex, Message, CHANNEL_SIZE> = Channel::new();
 
+mod config_consts {
+    use embassy_time::Duration;
+    use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
+
+    pub const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
+    pub const TOTAL_LED_FADEOUT_STEPS: u16 = 8;
+    pub const MAX_MOMENTARY_BUTTON_ON_TIME: Duration = Duration::from_millis(100);
+    pub const MAX_LED_ON_TIME: Duration = Duration::from_millis(500);
+    pub const BUTTON_TOOLTIP_COLOUR: Rgb565 = Rgb565::GREEN;
+    pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
+    pub const SEMICIRCLE_DIAMETER: u32 = 44;
+}
 mod candy_weigher_ui;
-mod pimori_display;
-mod pimori_display_leds;
+mod pimoroni_display;
+mod pimoroni_display_leds;
 mod round_robin_select;
 mod state;
 mod tasks;
@@ -59,7 +73,7 @@ async fn main(spawner: Spawner) {
     let spi_bus = Mutex::new(RefCell::new(spi));
     let mut display_buffer = [0u8; 512];
 
-    let mut display_led_controller = PimoriDisplayRgbLedController::new(
+    let mut display_led_controller = PimoroniDisplayRgbLedController::new(
         peripherals.PWM_SLICE3,
         peripherals.PWM_SLICE4,
         peripherals.PIN_6,
@@ -68,7 +82,7 @@ async fn main(spawner: Spawner) {
     );
     info!("LED controller initialised");
 
-    let mut display_controller = PimoriDisplayController::new(
+    let mut display_controller = PimoroniDisplayController::new(
         peripherals.PIN_16,
         peripherals.PIN_17,
         peripherals.PIN_20,
@@ -112,14 +126,14 @@ async fn main(spawner: Spawner) {
     info!("Tasks spawned");
 
     let mut state = State::default();
+    output_state(
+        &mut state,
+        &mut display_controller,
+        &mut display_led_controller,
+    );
 
-    display_controller
-        .draw_to_framebuffer(|display| candy_weigher_ui::draw(&state.to_display_state(), display));
-    display_controller.flush_buffer_to_screen();
     let rx = CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
-    const MAX_MOMENTARY_BUTTON_ON_TIME: Duration = Duration::from_millis(100);
-    const MAX_LED_ON_TIME: Duration = Duration::from_millis(500);
     let mut poll_first = PollFirst3::A;
     loop {
         // Interleave LED state updates.
@@ -132,54 +146,14 @@ async fn main(spawner: Spawner) {
             state.b_r_pressed.next_timer(MAX_MOMENTARY_BUTTON_ON_TIME),
         );
         let result = round_robin_select3(
-            poll_first,
+            &mut poll_first,
             rx.receive(),
             led_animation_future,
             momentary_button_animation_future,
         )
         .await;
         match result {
-            Either3::First(Message::ButtonAPressed) => {
-                state.lolly_weight_g += 0.1;
-                state.t_l_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-            }
-            Either3::First(Message::ButtonBPressed) => {
-                state.lolly_weight_g -= 0.1;
-                state.b_l_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-            }
-            Either3::First(Message::ButtonXPressed) => {
-                state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
-                state.t_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-            }
-            Either3::First(Message::ButtonYPressed) => {
-                state.tare_weight_g = state.scale_weight_g;
-                state.b_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-            }
-            Either3::First(Message::WeightUpdate(w)) => {
-                if w < state.scale_weight_g {
-                    state.led_state = LedState::Red {
-                        total_steps: 4,
-                        current_step: 0,
-                        current_step_at: Instant::now(),
-                    };
-                }
-                if w > state.scale_weight_g {
-                    state.led_state = LedState::Blue {
-                        total_steps: 4,
-                        current_step: 0,
-                        current_step_at: Instant::now(),
-                    };
-                }
-                state.scale_weight_g = w;
-            }
+            Either3::First(message) => state.handle_message(message),
             Either3::Second(_) => state.led_state = state.led_state.next(),
             Either3::Third(s) => match s {
                 embassy_futures::select::Either4::First(_) => {
@@ -196,33 +170,10 @@ async fn main(spawner: Spawner) {
                 }
             },
         }
-        match state.led_state {
-            LedState::Off => display_led_controller.all_off(),
-            LedState::Red {
-                total_steps,
-                current_step,
-                ..
-            } => {
-                display_led_controller.blue_off();
-                display_led_controller.set_red(Percentage(
-                    100 * total_steps.saturating_sub(current_step) / total_steps,
-                ))
-            }
-            LedState::Blue {
-                total_steps,
-                current_step,
-                ..
-            } => {
-                display_led_controller.red_off();
-                display_led_controller.set_blue(Percentage(
-                    100 * total_steps.saturating_sub(current_step) / total_steps,
-                ))
-            }
-        };
-        display_controller.draw_to_framebuffer(|display| {
-            candy_weigher_ui::draw(&state.to_display_state(), display)
-        });
-        display_controller.flush_buffer_to_screen();
-        poll_first.next();
+        output_state(
+            &mut state,
+            &mut display_controller,
+            &mut display_led_controller,
+        );
     }
 }

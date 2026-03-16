@@ -4,7 +4,7 @@ use embassy_rp::Peri;
 
 pub struct Percentage(pub u16);
 
-pub struct PimoriDisplayRgbLedController<'a> {
+pub struct PimoroniDisplayRgbLedController<'a> {
     // red and green output shares this slice
     rg_pwm_slice: Pwm<'a>,
     b_pwm_slice: Pwm<'a>,
@@ -12,14 +12,14 @@ pub struct PimoriDisplayRgbLedController<'a> {
     b_conf: pwm::Config,
 }
 
-impl<'a> PimoriDisplayRgbLedController<'a> {
+impl<'a> PimoroniDisplayRgbLedController<'a> {
     pub fn new(
         slice_3: Peri<'a, PWM_SLICE3>,
         slice_4: Peri<'a, PWM_SLICE4>,
         pin_6: Peri<'a, PIN_6>,
         pin_7: Peri<'a, PIN_7>,
         pin_8: Peri<'a, PIN_8>,
-    ) -> PimoriDisplayRgbLedController<'a> {
+    ) -> PimoroniDisplayRgbLedController<'a> {
         let mut pwm_config = pwm::Config::default();
         // high is off
         pwm_config.invert_a = true;

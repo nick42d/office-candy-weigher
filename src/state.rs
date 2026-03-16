@@ -1,5 +1,13 @@
-use crate::{candy_weigher_ui::DisplayState, DEFAULT_LOLLY_WEIGHT};
+use crate::{
+    candy_weigher_ui::{self, draw, DisplayState},
+    config_consts::{DEFAULT_LOLLY_WEIGHT, TOTAL_LED_FADEOUT_STEPS},
+    pimoroni_display::PimoroniDisplayController,
+    pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    Message,
+};
+use defmt::debug;
 use embassy_time::{Duration, Instant, Timer};
+
 pub struct State {
     pub tare_weight_g: f32,
     pub scale_weight_g: f32,
@@ -11,6 +19,8 @@ pub struct State {
     pub b_r_pressed: MomentaryButtonState,
     pub led_state: LedState,
     pub last_updated: Instant,
+    pub last_display_state: Option<DisplayState>,
+    pub last_led_state: Option<LedState>,
 }
 
 #[derive(Default)]
@@ -41,7 +51,7 @@ impl MomentaryButtonState {
     }
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub enum LedState {
     #[default]
     Off,
@@ -139,6 +149,8 @@ impl Default for State {
             b_r_pressed: Default::default(),
             led_state: Default::default(),
             last_updated: Instant::now(),
+            last_display_state: Default::default(),
+            last_led_state: Default::default(),
         }
     }
 }
@@ -171,5 +183,116 @@ impl State {
                 MomentaryButtonState::PressedRecently { .. }
             ),
         }
+    }
+    pub fn next_button_state(&mut self, s: ()) {
+        // match s {
+        //     embassy_futures::select::Either4::First(_) => {
+        //         state.t_l_pressed = state.t_l_pressed.next()
+        //     }
+        //     embassy_futures::select::Either4::Second(_) => {
+        //         state.t_r_pressed = state.t_r_pressed.next()
+        //     }
+        //     embassy_futures::select::Either4::Third(_) => {
+        //         state.b_l_pressed = state.b_l_pressed.next()
+        //     }
+        //     embassy_futures::select::Either4::Fourth(_) => {
+        //         state.b_r_pressed = state.b_r_pressed.next()
+        //     }
+        // }
+    }
+    pub fn get_transitions(&self) -> [Option<(Instant, ())>; 1] {
+        [
+            if let MomentaryButtonState::PressedRecently { on_at } = self.t_l_pressed {
+                Some((on_at, ()))
+            } else {
+                None
+            },
+        ]
+    }
+    pub fn handle_message(&mut self, message: Message) {
+        debug!("About to handle message: {}", message);
+        match message {
+            Message::ButtonAPressed => {
+                self.lolly_weight_g += 0.1;
+                self.t_l_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonBPressed => {
+                self.lolly_weight_g -= 0.1;
+                self.b_l_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonXPressed => {
+                self.saved_tared_scale_weight_g = self.scale_weight_g - self.tare_weight_g;
+                self.t_r_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonYPressed => {
+                self.tare_weight_g = self.scale_weight_g;
+                self.b_r_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::WeightUpdate(w) => {
+                if w < self.scale_weight_g {
+                    self.led_state = LedState::Red {
+                        total_steps: TOTAL_LED_FADEOUT_STEPS,
+                        current_step: 0,
+                        current_step_at: Instant::now(),
+                    };
+                }
+                if w > self.scale_weight_g {
+                    self.led_state = LedState::Blue {
+                        total_steps: TOTAL_LED_FADEOUT_STEPS,
+                        current_step: 0,
+                        current_step_at: Instant::now(),
+                    };
+                }
+                self.scale_weight_g = w;
+            }
+        }
+    }
+}
+
+pub fn output_state(
+    state: &mut State,
+    display_controller: &mut PimoroniDisplayController,
+    display_led_controller: &mut PimoroniDisplayRgbLedController,
+) {
+    if state.last_led_state.as_ref() != Some(&state.led_state) {
+        debug!("Updating LEDS");
+        match state.led_state {
+            LedState::Off => display_led_controller.all_off(),
+            LedState::Red {
+                total_steps,
+                current_step,
+                ..
+            } => {
+                display_led_controller.blue_off();
+                display_led_controller.set_red(Percentage(
+                    100 * total_steps.saturating_sub(current_step) / total_steps,
+                ))
+            }
+            LedState::Blue {
+                total_steps,
+                current_step,
+                ..
+            } => {
+                display_led_controller.red_off();
+                display_led_controller.set_blue(Percentage(
+                    100 * total_steps.saturating_sub(current_step) / total_steps,
+                ))
+            }
+        };
+        state.last_led_state = Some(state.led_state);
+    }
+    let next_display_state = state.to_display_state();
+    if state.last_display_state.as_ref() != Some(&next_display_state) {
+        display_controller
+            .draw_via_framebuffer(|display| candy_weigher_ui::draw(&next_display_state, display));
+        state.last_display_state = Some(next_display_state);
     }
 }
