@@ -21,7 +21,6 @@ use embassy_rp::spi::{Config, Spi};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Channel;
-use embassy_time::Instant;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -86,6 +85,7 @@ async fn main(spawner: Spawner) {
         peripherals.PIN_16,
         peripherals.PIN_17,
         peripherals.PIN_20,
+        peripherals.PWM_SLICE2,
         &spi_bus,
         &mut display_buffer,
     );
@@ -131,6 +131,7 @@ async fn main(spawner: Spawner) {
         &mut display_controller,
         &mut display_led_controller,
     );
+    display_controller.turn_on_display(Percentage(100));
 
     let rx = CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");

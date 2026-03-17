@@ -4,7 +4,8 @@ use defmt::{debug, trace};
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
     gpio::{Level, Output},
-    peripherals::{PIN_16, PIN_17, PIN_20, SPI0},
+    peripherals::{PIN_16, PIN_17, PIN_20, PWM_SLICE2, SPI0},
+    pwm::{self, Pwm},
     spi::{self, Async, Spi},
     Peri,
 };
@@ -24,6 +25,8 @@ use mipidsi::{
     Builder, Display, NoResetPin,
 };
 
+use crate::pimoroni_display_leds::Percentage;
+
 pub const DISPLAY_FREQ: u32 = 16_000_000;
 pub const DISPLAY_H: u16 = 135;
 pub const DISPLAY_W: u16 = 240;
@@ -31,6 +34,8 @@ pub const DISPLAY_H_AS_USIZE: usize = DISPLAY_H as usize;
 pub const DISPLAY_W_AS_USIZE: usize = DISPLAY_W as usize;
 pub const DISPLAY_PX: usize = DISPLAY_H_AS_USIZE * DISPLAY_W_AS_USIZE;
 pub const DISPLAY_BYTES: usize = DISPLAY_PX * 2;
+// Should correspond to 5 kHz.
+pub const BACKLIGHT_PWM_TOP: u16 = 24_999;
 
 type Spi0<'a> = Spi<'a, SPI0, Async>;
 type PimoroniDisplay<'a> = Display<
@@ -49,18 +54,22 @@ pub struct PimoroniDisplayController<'a> {
         DISPLAY_H_AS_USIZE,
         DISPLAY_BYTES,
     >,
-    backlight: Output<'a>,
+    backlight: Pwm<'a>,
+    backlight_conf: pwm::Config,
 }
 impl<'a> PimoroniDisplayController<'a> {
     pub fn new(
         pin16: Peri<'a, PIN_16>,
         pin17: Peri<'a, PIN_17>,
         pin20: Peri<'a, PIN_20>,
+        slice2: Peri<'a, PWM_SLICE2>,
         spi_bus: &'a Mutex<NoopRawMutex, RefCell<Spi0<'a>>>,
         buffer: &'a mut [u8; 512],
     ) -> Self {
-        // Enable LCD backlight - required for screen to operate
-        let backlight = Output::new(pin20, Level::High);
+        let mut backlight_pwm_conf = pwm::Config::default();
+        backlight_pwm_conf.top = BACKLIGHT_PWM_TOP;
+        let backlight = Pwm::new_output_a(slice2, pin20, backlight_pwm_conf.clone());
+
         // dcx is the data command/control output required for the display
         // 0 = command, 1 = data
         let display_dcx = Output::new(pin16, Level::Low);
@@ -97,13 +106,16 @@ impl<'a> PimoroniDisplayController<'a> {
             display,
             backlight,
             framebuffer,
+            backlight_conf: backlight_pwm_conf,
         }
     }
     pub fn turn_off_display(&mut self) {
-        self.backlight.set_low();
+        self.backlight_conf.compare_a = 0;
+        self.backlight.set_config(&self.backlight_conf);
     }
-    pub fn turn_on_display(&mut self) {
-        self.backlight.set_high();
+    pub fn turn_on_display(&mut self, percentage: Percentage) {
+        self.backlight_conf.compare_a = BACKLIGHT_PWM_TOP / 100 * percentage.0;
+        self.backlight.set_config(&self.backlight_conf);
     }
     pub fn draw_via_framebuffer(
         &mut self,
@@ -120,21 +132,6 @@ impl<'a> PimoroniDisplayController<'a> {
     ) {
         draw_fn(&mut self.framebuffer);
         self.flush_buffer_to_screen();
-    }
-    fn draw_to_framebuffer(
-        &mut self,
-        draw_fn: impl FnOnce(
-            &mut Framebuffer<
-                Rgb565,
-                RawU16,
-                BigEndian,
-                DISPLAY_W_AS_USIZE,
-                DISPLAY_H_AS_USIZE,
-                DISPLAY_BYTES,
-            >,
-        ),
-    ) {
-        draw_fn(&mut self.framebuffer)
     }
     fn flush_buffer_to_screen(&mut self) {
         debug!("Flushing framebuffer to screen");

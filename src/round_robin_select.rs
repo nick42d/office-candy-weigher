@@ -8,14 +8,15 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
+use defmt::info;
 use embassy_futures::select::{Either3, Either4};
 use pin_project::pin_project;
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 #[pin_project]
-pub struct RoundRobinSelect3<A, B, C> {
-    poll_first: PollFirst3,
+pub struct RoundRobinSelect3<'a, A, B, C> {
+    poll_first: &'a mut PollFirst3,
     #[pin]
     a: A,
     #[pin]
@@ -27,8 +28,8 @@ pub struct RoundRobinSelect3<A, B, C> {
 #[derive(Debug)]
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 #[pin_project]
-pub struct RoundRobinSelect4<A, B, C, D> {
-    poll_first: PollFirst4,
+pub struct RoundRobinSelect4<'a, A, B, C, D> {
+    poll_first: &'a mut PollFirst4,
     #[pin]
     a: A,
     #[pin]
@@ -73,7 +74,7 @@ impl PollFirst4 {
     }
 }
 
-impl<A, B, C> Future for RoundRobinSelect3<A, B, C>
+impl<A, B, C> Future for RoundRobinSelect3<'_, A, B, C>
 where
     A: Future,
     B: Future,
@@ -128,7 +129,7 @@ where
     }
 }
 
-impl<A, B, C, D> Future for RoundRobinSelect4<A, B, C, D>
+impl<A, B, C, D> Future for RoundRobinSelect4<'_, A, B, C, D>
 where
     A: Future,
     B: Future,
@@ -214,16 +215,14 @@ pub fn round_robin_select3<A, B, C>(
     a: A,
     b: B,
     c: C,
-) -> RoundRobinSelect3<A, B, C>
+) -> RoundRobinSelect3<'_, A, B, C>
 where
     A: Future,
     B: Future,
     C: Future,
 {
-    let prev_poll_first = *poll_first;
-    poll_first.next();
     RoundRobinSelect3 {
-        poll_first: prev_poll_first,
+        poll_first,
         a,
         b,
         c,
@@ -236,17 +235,15 @@ pub fn round_robin_select4<A, B, C, D>(
     b: B,
     c: C,
     d: D,
-) -> RoundRobinSelect4<A, B, C, D>
+) -> RoundRobinSelect4<'_, A, B, C, D>
 where
     A: Future,
     B: Future,
     C: Future,
     D: Future,
 {
-    let prev_poll_first = *poll_first;
-    poll_first.next();
     RoundRobinSelect4 {
-        poll_first: prev_poll_first,
+        poll_first,
         a,
         b,
         c,
