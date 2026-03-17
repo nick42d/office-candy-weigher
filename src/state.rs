@@ -33,19 +33,20 @@ pub enum MomentaryButtonState {
 }
 
 impl MomentaryButtonState {
-    pub fn next(self) -> Self {
+    pub fn next(&self) -> Self {
         match self {
             MomentaryButtonState::Off => MomentaryButtonState::Off,
             MomentaryButtonState::PressedRecently { .. } => MomentaryButtonState::Off,
         }
     }
-    pub async fn next_timer(&self, max_on_time: Duration) {
+    pub async fn next_timer(&self, max_on_time: Duration) -> fn(&mut Self) {
         match self {
             MomentaryButtonState::Off => core::future::pending().await,
             MomentaryButtonState::PressedRecently { on_at } => {
                 let on_for = Instant::now() - *on_at;
                 let rem_on = max_on_time.checked_sub(on_for).unwrap_or_default();
                 Timer::after(rem_on).await;
+                |this| *this = this.next()
             }
         }
     }

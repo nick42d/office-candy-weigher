@@ -1,4 +1,5 @@
 use crate::{Message, CHANNEL_SIZE};
+use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{PIN_12, PIN_13, PIN_14, PIN_15, PIN_26, PIN_27, PIN_28, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
@@ -52,7 +53,24 @@ async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     loop {
         button.wait_for_low().await;
         tx.send(pressed_message).await;
-        button.wait_for_high().await;
+        // Wait for long press
+        if let Either::First(_) = select(
+            button.wait_for_high(),
+            embassy_time::Timer::after_millis(500),
+        )
+        .await
+        {
+            continue;
+        }
+        tx.send(pressed_message).await;
+        while let Either::Second(_) = select(
+            button.wait_for_high(),
+            embassy_time::Timer::after_millis(50),
+        )
+        .await
+        {
+            tx.send(pressed_message).await;
+        }
     }
 }
 
