@@ -6,7 +6,9 @@ use crate::config_consts::{
 };
 use crate::pimoroni_display::PimoroniDisplayController;
 use crate::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController};
-use crate::round_robin_select::{round_robin_select3, PollFirst3};
+use crate::round_robin_select::{
+    round_robin_select3, round_robin_select_array, PollFirst2, PollFirst3,
+};
 use crate::state::{output_state, LedState, MomentaryButtonState, State};
 use crate::tasks::pico_display_button_a_manager;
 use crate::tasks::{
@@ -14,13 +16,16 @@ use crate::tasks::{
     pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use core::cell::RefCell;
+use core::convert::identity;
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select4, Either3};
+use embassy_futures::select::{select4, Either};
 use embassy_rp::spi::{Config, Spi};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Channel;
+use embassy_time::Timer;
+use futures::FutureExt;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -135,41 +140,23 @@ async fn main(spawner: Spawner) {
 
     let rx = CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
-    let mut poll_first = PollFirst3::A;
+    let mut poll_first_1 = PollFirst2::A;
+    let mut poll_first_2 = 0;
     loop {
-        // Interleave LED state updates.
-        let led_animation_future = state.led_state.next_timer(MAX_LED_ON_TIME);
-        // Interleave button state updates.
-        let momentary_button_animation_future = select4(
-            state.t_l_pressed.next_timer(MAX_MOMENTARY_BUTTON_ON_TIME),
-            state.t_r_pressed.next_timer(MAX_MOMENTARY_BUTTON_ON_TIME),
-            state.b_l_pressed.next_timer(MAX_MOMENTARY_BUTTON_ON_TIME),
-            state.b_r_pressed.next_timer(MAX_MOMENTARY_BUTTON_ON_TIME),
-        );
-        let result = round_robin_select3(
-            &mut poll_first,
+        // Interleave state transitions
+        let state_transitions_futures = state.get_transitions().map(|x| match x {
+            Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_| f)),
+            None => futures::future::Either::Left(core::future::pending()),
+        });
+        let result = round_robin_select::round_robin_select(
+            &mut poll_first_1,
             rx.receive(),
-            led_animation_future,
-            momentary_button_animation_future,
+            round_robin_select_array(&mut poll_first_2, state_transitions_futures),
         )
         .await;
         match result {
-            Either3::First(message) => state.handle_message(message),
-            Either3::Second(_) => state.led_state = state.led_state.next(),
-            Either3::Third(s) => match s {
-                embassy_futures::select::Either4::First(_) => {
-                    state.t_l_pressed = state.t_l_pressed.next()
-                }
-                embassy_futures::select::Either4::Second(_) => {
-                    state.t_r_pressed = state.t_r_pressed.next()
-                }
-                embassy_futures::select::Either4::Third(_) => {
-                    state.b_l_pressed = state.b_l_pressed.next()
-                }
-                embassy_futures::select::Either4::Fourth(_) => {
-                    state.b_r_pressed = state.b_r_pressed.next()
-                }
-            },
+            Either::First(message) => state.handle_message(message),
+            Either::Second((transition, _)) => transition(&mut state),
         }
         output_state(
             &mut state,

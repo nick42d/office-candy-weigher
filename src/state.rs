@@ -1,6 +1,9 @@
 use crate::{
     candy_weigher_ui::{self, draw, DisplayState},
-    config_consts::{DEFAULT_LOLLY_WEIGHT, TOTAL_LED_FADEOUT_STEPS},
+    config_consts::{
+        DEFAULT_LOLLY_WEIGHT, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
+        TOTAL_LED_FADEOUT_STEPS,
+    },
     pimoroni_display::PimoroniDisplayController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     Message,
@@ -39,14 +42,11 @@ impl MomentaryButtonState {
             MomentaryButtonState::PressedRecently { .. } => MomentaryButtonState::Off,
         }
     }
-    pub async fn next_timer(&self, max_on_time: Duration) -> fn(&mut Self) {
+    pub fn next_timer(&self, max_on_time: Duration) -> Option<Instant> {
         match self {
-            MomentaryButtonState::Off => core::future::pending().await,
+            MomentaryButtonState::Off => None,
             MomentaryButtonState::PressedRecently { on_at } => {
-                let on_for = Instant::now() - *on_at;
-                let rem_on = max_on_time.checked_sub(on_for).unwrap_or_default();
-                Timer::after(rem_on).await;
-                |this| *this = this.next()
+                Some(on_at.saturating_add(max_on_time))
             }
         }
     }
@@ -102,36 +102,23 @@ impl LedState {
             },
         }
     }
-    pub async fn next_timer(&self, total_animation_duration: Duration) {
+    pub fn next_timer(&self, total_animation_duration: Duration) -> Option<Instant> {
         match self {
-            LedState::Off => core::future::pending().await,
+            LedState::Off => None,
             LedState::Red {
                 total_steps,
                 current_step_at,
                 ..
-            } => {
-                let current_step_for = Instant::now() - *current_step_at;
-                let max_step_length = total_animation_duration
-                    .checked_div(*total_steps as u32)
-                    .unwrap_or_default();
-                let rem_current_step = max_step_length
-                    .checked_sub(current_step_for)
-                    .unwrap_or_default();
-                Timer::after(rem_current_step).await
             }
-            LedState::Blue {
+            | LedState::Blue {
                 total_steps,
                 current_step_at,
                 ..
             } => {
-                let current_step_for = Instant::now() - *current_step_at;
                 let max_step_length = total_animation_duration
                     .checked_div(*total_steps as u32)
                     .unwrap_or_default();
-                let rem_current_step = max_step_length
-                    .checked_sub(current_step_for)
-                    .unwrap_or_default();
-                Timer::after(rem_current_step).await
+                Some(current_step_at.saturating_add(max_step_length))
             }
         }
     }
@@ -185,29 +172,51 @@ impl State {
             ),
         }
     }
-    pub fn next_button_state(&mut self, s: ()) {
-        // match s {
-        //     embassy_futures::select::Either4::First(_) => {
-        //         state.t_l_pressed = state.t_l_pressed.next()
-        //     }
-        //     embassy_futures::select::Either4::Second(_) => {
-        //         state.t_r_pressed = state.t_r_pressed.next()
-        //     }
-        //     embassy_futures::select::Either4::Third(_) => {
-        //         state.b_l_pressed = state.b_l_pressed.next()
-        //     }
-        //     embassy_futures::select::Either4::Fourth(_) => {
-        //         state.b_r_pressed = state.b_r_pressed.next()
-        //     }
-        // }
-    }
-    pub fn get_transitions(&self) -> [Option<(Instant, ())>; 1] {
+    pub fn get_transitions(&self) -> [Option<(Instant, for<'a> fn(&'a mut Self))>; 5] {
         [
-            if let MomentaryButtonState::PressedRecently { on_at } = self.t_l_pressed {
-                Some((on_at, ()))
-            } else {
-                None
-            },
+            self.t_l_pressed
+                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
+                .map(|t| {
+                    (
+                        t,
+                        (|this: &mut Self| this.t_l_pressed = this.t_l_pressed.next())
+                            as for<'a> fn(&'a mut Self),
+                    )
+                }),
+            self.t_r_pressed
+                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
+                .map(|t| {
+                    (
+                        t,
+                        (|this: &mut Self| this.t_r_pressed = this.t_r_pressed.next())
+                            as for<'a> fn(&'a mut Self),
+                    )
+                }),
+            self.b_l_pressed
+                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
+                .map(|t| {
+                    (
+                        t,
+                        (|this: &mut Self| this.b_l_pressed = this.b_l_pressed.next())
+                            as for<'a> fn(&'a mut Self),
+                    )
+                }),
+            self.b_r_pressed
+                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
+                .map(|t| {
+                    (
+                        t,
+                        (|this: &mut Self| this.b_r_pressed = this.b_r_pressed.next())
+                            as for<'a> fn(&'a mut Self),
+                    )
+                }),
+            self.led_state.next_timer(MAX_LED_ON_TIME).map(|t| {
+                (
+                    t,
+                    (|this: &mut Self| this.led_state = this.led_state.next())
+                        as for<'a> fn(&'a mut Self),
+                )
+            }),
         ]
     }
     pub fn handle_message(&mut self, message: Message) {
