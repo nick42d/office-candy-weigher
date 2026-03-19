@@ -10,7 +10,7 @@ use crate::round_robin_select::{
     round_robin_select3, round_robin_select_array, PollFirst2, PollFirst3,
 };
 use crate::state::{output_state, LedState, MomentaryButtonState, State};
-use crate::tasks::pico_display_button_a_manager;
+use crate::tasks::{hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     hx710_load_cell_manager_rotary_encoder, pico_display_button_b_manager,
     pico_display_button_x_manager, pico_display_button_y_manager,
@@ -120,11 +120,20 @@ async fn main(spawner: Spawner) {
             CHANNEL.sender(),
         ))
         .unwrap();
+    // SIMULATION CODE
+    // spawner
+    //     .spawn(hx710_load_cell_manager_rotary_encoder(
+    //         peripherals.PIN_26,
+    //         peripherals.PIN_27,
+    //         peripherals.PIO0,
+    //         CHANNEL.sender(),
+    //     ))
+    //     .unwrap();
     spawner
-        .spawn(hx710_load_cell_manager_rotary_encoder(
-            peripherals.PIN_26,
-            peripherals.PIN_27,
-            peripherals.PIO0,
+        .spawn(hx710_load_cell_manager(
+            peripherals.PIN_10,
+            peripherals.PIN_11,
+            peripherals.PIO1,
             CHANNEL.sender(),
         ))
         .unwrap();
@@ -148,10 +157,16 @@ async fn main(spawner: Spawner) {
             Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_| f)),
             None => futures::future::Either::Left(core::future::pending()),
         });
+        // let result = round_robin_select::round_robin_select(
+        //     &mut poll_first_1,
+        //     rx.receive(),
+        //     round_robin_select_array(&mut poll_first_2, state_transitions_futures),
+        // )
+        // .await;
         let result = round_robin_select::round_robin_select(
             &mut poll_first_1,
             rx.receive(),
-            round_robin_select_array(&mut poll_first_2, state_transitions_futures),
+            embassy_futures::select::select_array(state_transitions_futures),
         )
         .await;
         match result {
