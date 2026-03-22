@@ -12,5 +12,5 @@ pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
 pub const SEMICIRCLE_DIAMETER: u32 = 44;
 pub const LOW_BACKLIGHT_PERCENTAGE: Percentage = Percentage(10);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
-// Disabled backlight off
-pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Duration = Duration::MAX;
+// Disable backlight off mode
+pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = None;

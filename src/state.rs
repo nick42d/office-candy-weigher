@@ -1,5 +1,4 @@
 use crate::{
-    Message,
     candy_weigher_ui::{self, DisplayState},
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
@@ -8,6 +7,7 @@ use crate::{
     },
     pimoroni_display::PimoroniDisplayController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    Message,
 };
 use core::ops::Mul;
 use defmt::debug;
@@ -47,15 +47,15 @@ impl DisplayBacklightState {
     pub fn next_timer(
         &self,
         time_to_backlight_low: Duration,
-        time_from_backlight_low_to_off: Duration,
+        time_from_backlight_low_to_off: Option<Duration>,
     ) -> Option<Instant> {
         match self {
             DisplayBacklightState::Off => None,
-            DisplayBacklightState::LowPower { on_at } => Some(
+            DisplayBacklightState::LowPower { on_at } => time_from_backlight_low_to_off.map(|t| {
                 on_at
                     .saturating_add(time_to_backlight_low)
-                    .saturating_add(time_from_backlight_low_to_off),
-            ),
+                    .saturating_add(t)
+            }),
             DisplayBacklightState::On { on_at } => {
                 Some(on_at.saturating_add(time_to_backlight_low))
             }

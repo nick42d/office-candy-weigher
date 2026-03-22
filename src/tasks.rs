@@ -1,10 +1,10 @@
-use crate::{CHANNEL_SIZE, Message};
+use crate::{Message, CHANNEL_SIZE};
 use defmt::info;
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIO1};
 use embassy_rp::pio::{self, InterruptHandler, Pio, ShiftDirection};
-use embassy_rp::{Peri, bind_interrupts};
+use embassy_rp::{bind_interrupts, Peri};
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
@@ -146,21 +146,29 @@ pub async fn hx710_load_cell_manager_simulated(
 #[cfg(feature = "hardware-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_rotary_encoder(
-    pin26: Peri<'static, PIN_26>,
-    pin27: Peri<'static, PIN_27>,
+    pin26: Peri<'static, embassy_rp::peripherals::PIN_26>,
+    pin27: Peri<'static, embassy_rp::peripherals::PIN_27>,
     // Button: vvv
     // pin28: Peri<'static, PIN_28>,
-    pio0: Peri<'static, PIO0>,
+    pio0: Peri<'static, embassy_rp::peripherals::PIO0>,
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let Pio {
         mut common, sm0, ..
     } = Pio::new(pio0, Irqs);
-    let program = PioEncoderProgram::new(&mut common);
-    let mut encoder = PioEncoder::new(&mut common, sm0, pin26, pin27, &program);
+    let program = embassy_rp::pio_programs::rotary_encoder::PioEncoderProgram::new(&mut common);
+    let mut encoder = embassy_rp::pio_programs::rotary_encoder::PioEncoder::new(
+        &mut common,
+        sm0,
+        pin26,
+        pin27,
+        &program,
+    );
 
     let mut base_weight = 0.0;
     loop {
+        use embassy_rp::pio_programs::rotary_encoder::Direction;
+
         let direction = encoder.read().await;
         match direction {
             Direction::Clockwise => base_weight += 2.5,
