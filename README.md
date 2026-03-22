@@ -10,6 +10,9 @@
 ### Deployment only
 - Pico debug probe or equivalent (e.g https://core-electronics.com.au/raspberry-pi-debug-probe.html)
 
+## Configuration
+Configurable variables are located in `src/config_consts.rs`.
+
 ## How to deploy
 This project uses `probe-rs` to deploy via the inbuilt debug pins on the pico.
 
@@ -20,7 +23,8 @@ This project uses `probe-rs` to deploy via the inbuilt debug pins on the pico.
 
 That's it - the app is now installed on the microcontroller and it will run automatically on boot.
 
+### Simulation
+To enable the rotary encoder as simulator, deploy and run via `cargo r --release -F hardware-sim`
+
 ### Note
 This was developed on Linux - it should also be able to deploy via Windows however it's not been tested.
-
-

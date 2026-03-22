@@ -34,3 +34,7 @@ opt-level = 'z'
 debug = 2
 lto = true
 opt-level = "z"
+
+[features]
+# Enable use of rotary encoder as hardware sim
+hardware-sim = []

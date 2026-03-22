@@ -13,6 +13,17 @@ use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
 
+#[cfg(feature = "hardware-sim")]
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    PIO1_IRQ_0 => InterruptHandler<PIO1>;
+});
+
+#[cfg(not(feature = "hardware-sim"))]
+bind_interrupts!(struct Irqs {
+    PIO1_IRQ_0 => InterruptHandler<PIO1>;
+});
+
 #[embassy_executor::task]
 pub async fn pico_display_button_a_manager(
     pin12: Peri<'static, PIN_12>,
@@ -103,11 +114,7 @@ pub async fn hx710_load_cell_manager_simulated(
     }
 }
 
-bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    PIO1_IRQ_0 => InterruptHandler<PIO1>;
-});
-
+#[cfg(feature = "hardware-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_rotary_encoder(
     pin26: Peri<'static, PIN_26>,

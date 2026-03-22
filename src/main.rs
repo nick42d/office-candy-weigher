@@ -33,19 +33,8 @@ const CHANNEL_SIZE: usize = 16;
 
 static CHANNEL: Channel<ThreadModeRawMutex, Message, CHANNEL_SIZE> = Channel::new();
 
-mod config_consts {
-    use embassy_time::Duration;
-    use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
-
-    pub const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
-    pub const TOTAL_LED_FADEOUT_STEPS: u16 = 8;
-    pub const MAX_MOMENTARY_BUTTON_ON_TIME: Duration = Duration::from_millis(100);
-    pub const MAX_LED_ON_TIME: Duration = Duration::from_millis(500);
-    pub const BUTTON_TOOLTIP_COLOUR: Rgb565 = Rgb565::GREEN;
-    pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
-    pub const SEMICIRCLE_DIAMETER: u32 = 44;
-}
 mod candy_weigher_ui;
+mod config_consts;
 mod pimoroni_display;
 mod pimoroni_display_leds;
 mod round_robin_select;
@@ -120,20 +109,20 @@ async fn main(spawner: Spawner) {
             CHANNEL.sender(),
         ))
         .unwrap();
-    // SIMULATION CODE
-    // spawner
-    //     .spawn(hx710_load_cell_manager_rotary_encoder(
-    //         peripherals.PIN_26,
-    //         peripherals.PIN_27,
-    //         peripherals.PIO0,
-    //         CHANNEL.sender(),
-    //     ))
-    //     .unwrap();
     spawner
         .spawn(hx710_load_cell_manager(
             peripherals.PIN_10,
             peripherals.PIN_11,
             peripherals.PIO1,
+            CHANNEL.sender(),
+        ))
+        .unwrap();
+    #[cfg(feature = "hardware-sim")]
+    spawner
+        .spawn(hx710_load_cell_manager_rotary_encoder(
+            peripherals.PIN_26,
+            peripherals.PIN_27,
+            peripherals.PIO0,
             CHANNEL.sender(),
         ))
         .unwrap();
