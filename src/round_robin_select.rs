@@ -8,7 +8,6 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use defmt::info;
 use embassy_futures::select::{Either, Either3, Either4};
 use pin_project::pin_project;
 

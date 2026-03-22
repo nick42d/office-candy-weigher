@@ -1,22 +1,18 @@
 #![no_std]
 #![no_main]
 
-use crate::config_consts::{
-    MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME, TOTAL_LED_FADEOUT_STEPS,
-};
 use crate::pimoroni_display::PimoroniDisplayController;
-use crate::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController};
-use crate::round_robin_select::{round_robin_select3, PollFirst2, PollFirst3};
-use crate::state::{output_state, LedState, MomentaryButtonState, State};
+use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
+use crate::round_robin_select::PollFirst2;
+use crate::state::{output_state, State};
 use crate::tasks::{hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use core::cell::RefCell;
-use core::convert::identity;
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select4, Either};
+use embassy_futures::select::Either;
 use embassy_rp::spi::{Config, Spi};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;

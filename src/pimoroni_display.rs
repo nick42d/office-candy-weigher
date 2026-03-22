@@ -1,6 +1,6 @@
 use core::cell::RefCell;
 
-use defmt::{debug, trace};
+use defmt::debug;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
     gpio::{Level, Output},
@@ -10,7 +10,7 @@ use embassy_rp::{
     Peri,
 };
 use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
-use embassy_time::{Delay, Instant};
+use embassy_time::Delay;
 use embedded_graphics::{
     framebuffer::Framebuffer,
     pixelcolor::{

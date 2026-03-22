@@ -1,5 +1,5 @@
 use crate::{
-    candy_weigher_ui::{self, draw, DisplayState},
+    candy_weigher_ui::{self, DisplayState},
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
         MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,

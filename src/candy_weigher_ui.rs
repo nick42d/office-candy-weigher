@@ -62,8 +62,8 @@ where
     )
     .into_styled(circle_style);
     let button_tooltip_font = FONT_10X20;
-    let button_tooltip_font_w = button_tooltip_font.character_size.width;
-    let button_tooltip_font_h = button_tooltip_font.character_size.height;
+    let _button_tooltip_font_w = button_tooltip_font.character_size.width;
+    let _button_tooltip_font_h = button_tooltip_font.character_size.height;
     let button_text_style = MonoTextStyle::new(&button_tooltip_font, BUTTON_TOOLTIP_COLOUR);
     let text_t_l = Text::new(
         "+",

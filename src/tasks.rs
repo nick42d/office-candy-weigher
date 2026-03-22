@@ -3,11 +3,9 @@ use defmt::info;
 use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{
-    DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_20, PIN_21, PIN_26, PIN_27,
-    PIN_28, PIO0, PIO1,
+    PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIO1,
 };
 use embassy_rp::pio::{self, InterruptHandler, Pio, ShiftDirection};
-use embassy_rp::pio_programs::rotary_encoder::{Direction, PioEncoder, PioEncoderProgram};
 use embassy_rp::{bind_interrupts, Peri};
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
