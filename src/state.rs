@@ -1,13 +1,13 @@
 use crate::{
-    candy_weigher_ui::{self, DisplayState},
+    CORE1_SIGNAL, Message,
+    candy_weigher_ui::DisplayState,
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
         MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
         TOTAL_LED_FADEOUT_STEPS,
     },
-    pimoroni_display::{PimoroniDisplayBacklightController, PimoroniDisplayController},
+    pimoroni_display::PimoroniDisplayBacklightController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
-    Message, CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;

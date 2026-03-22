@@ -3,19 +3,19 @@ use core::cell::RefCell;
 use crate::config_consts::{SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
 use crate::hx710::{PioHX710, PioHX710Program};
 use crate::pimoroni_display::PimoroniDisplayController;
-use crate::{candy_weigher_ui, Message, CHANNEL_SIZE, CORE1_SIGNAL};
+use crate::{CHANNEL_SIZE, CORE1_SIGNAL, Message, candy_weigher_ui};
 use defmt::info;
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{
     DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19, PIO1,
     SPI0,
 };
-use embassy_rp::pio::{self, InterruptHandler, Pio, ShiftDirection};
+use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::spi::{self, Spi};
-use embassy_rp::{bind_interrupts, Peri};
-use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
+use embassy_rp::{Peri, bind_interrupts};
 use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
 
