@@ -8,7 +8,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct DisplayState {
     pub scale_weight_g: f32,
     pub lolly_weight_g: f32,

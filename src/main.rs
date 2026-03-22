@@ -1,33 +1,42 @@
 #![no_std]
 #![no_main]
 
-use crate::pimoroni_display::PimoroniDisplayController;
+use crate::candy_weigher_ui::DisplayState;
+use crate::pimoroni_display::{PimoroniDisplayBacklightController, PimoroniDisplayController};
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
-use crate::state::{State, output_state};
-use crate::tasks::{hx710_load_cell_manager, pico_display_button_a_manager};
+use crate::state::{output_state, State};
+use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use core::cell::RefCell;
 use defmt::*;
-use embassy_executor::Spawner;
+use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
+use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::spi::{Config, Spi};
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use futures::FutureExt;
+use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
 const CHANNEL_SIZE: usize = 16;
 
 static CHANNEL: Channel<ThreadModeRawMutex, Message, CHANNEL_SIZE> = Channel::new();
+// Give core1 (second core) it's own stack.
+static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();
+static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
+static CORE1_SIGNAL: Signal<CriticalSectionRawMutex, DisplayState> = Signal::new();
 
 mod candy_weigher_ui;
 mod config_consts;
+mod hx710;
 mod pimoroni_display;
 mod pimoroni_display_leds;
 mod round_robin_select;
@@ -52,17 +61,6 @@ async fn main(spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
     info!("Peripherals initialised");
 
-    // TODO: Consider if interrupt handler needs to be set up for DMA_CH0
-    let spi = Spi::new_txonly(
-        peripherals.SPI0,
-        peripherals.PIN_18,
-        peripherals.PIN_19,
-        peripherals.DMA_CH0,
-        Config::default(),
-    );
-    let spi_bus = Mutex::new(RefCell::new(spi));
-    let mut display_buffer = [0u8; 512];
-
     let mut display_led_controller = PimoroniDisplayRgbLedController::new(
         peripherals.PWM_SLICE3,
         peripherals.PWM_SLICE4,
@@ -72,16 +70,30 @@ async fn main(spawner: Spawner) {
     );
     info!("LED controller initialised");
 
-    let mut display_controller = PimoroniDisplayController::new(
-        peripherals.PIN_16,
-        peripherals.PIN_17,
-        peripherals.PIN_20,
-        peripherals.PWM_SLICE2,
-        &spi_bus,
-        &mut display_buffer,
-    );
-    info!("Display controller initialised");
+    let mut display_backlight_controller =
+        PimoroniDisplayBacklightController::new(peripherals.PIN_20, peripherals.PWM_SLICE2);
+    info!("Display backlight controller initialised");
 
+    spawn_core1(
+        peripherals.CORE1,
+        CORE1_STACK.init(Stack::new()),
+        move || {
+            let core1_executor = CORE1_EXECUTOR.init(Executor::new());
+            core1_executor.run(|spawner| {
+                spawner
+                    .spawn(display_manager(
+                        peripherals.PIN_16,
+                        peripherals.PIN_17,
+                        peripherals.PIN_18,
+                        peripherals.PIN_19,
+                        peripherals.SPI0,
+                        peripherals.DMA_CH0,
+                    ))
+                    .unwrap();
+                info!("Core1 tasks spawned");
+            });
+        },
+    );
     spawner
         .spawn(pico_display_button_a_manager(
             peripherals.PIN_12,
@@ -123,12 +135,16 @@ async fn main(spawner: Spawner) {
             CHANNEL.sender(),
         ))
         .unwrap();
-    info!("Tasks spawned");
+    #[cfg(feature = "software-sim")]
+    spawner
+        .spawn(tasks::hx710_load_cell_manager_simulated(CHANNEL.sender()))
+        .unwrap();
+    info!("Core0 tasks spawned");
 
     let mut state = State::default();
     output_state(
         &mut state,
-        &mut display_controller,
+        &mut display_backlight_controller,
         &mut display_led_controller,
     );
 
@@ -158,7 +174,7 @@ async fn main(spawner: Spawner) {
         }
         output_state(
             &mut state,
-            &mut display_controller,
+            &mut display_backlight_controller,
             &mut display_led_controller,
         );
     }

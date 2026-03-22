@@ -5,9 +5,9 @@ use crate::{
         MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
         TOTAL_LED_FADEOUT_STEPS,
     },
-    pimoroni_display::PimoroniDisplayController,
+    pimoroni_display::{PimoroniDisplayBacklightController, PimoroniDisplayController},
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
-    Message,
+    Message, CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;
@@ -402,7 +402,7 @@ impl State {
 
 pub fn output_state(
     state: &mut State,
-    display_controller: &mut PimoroniDisplayController,
+    display_backlight_controller: &mut PimoroniDisplayBacklightController,
     display_led_controller: &mut PimoroniDisplayRgbLedController,
 ) {
     if state.last_led_state.as_ref() != Some(&state.led_state) {
@@ -434,18 +434,19 @@ pub fn output_state(
     }
     let next_display_state = state.to_display_state();
     if state.last_display_state.as_ref() != Some(&next_display_state) {
-        display_controller
-            .draw_via_framebuffer(|display| candy_weigher_ui::draw(&next_display_state, display));
+        CORE1_SIGNAL.signal(next_display_state.clone());
         state.last_display_state = Some(next_display_state);
     }
     if state.last_backlight_state.as_ref() != Some(&state.backlight_state) {
         debug!("Updating backlight");
         match state.backlight_state {
-            DisplayBacklightState::Off => display_controller.turn_off_display(),
+            DisplayBacklightState::Off => display_backlight_controller.turn_off_display(),
             DisplayBacklightState::LowPower { .. } => {
-                display_controller.turn_on_display(LOW_BACKLIGHT_PERCENTAGE)
+                display_backlight_controller.turn_on_display(LOW_BACKLIGHT_PERCENTAGE)
             }
-            DisplayBacklightState::On { .. } => display_controller.turn_on_display(Percentage(100)),
+            DisplayBacklightState::On { .. } => {
+                display_backlight_controller.turn_on_display(Percentage(100))
+            }
         }
         state.last_backlight_state = Some(state.backlight_state);
     }

@@ -14,3 +14,9 @@ pub const LOW_BACKLIGHT_PERCENTAGE: Percentage = Percentage(10);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
 // Disable backlight off mode
 pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = None;
+// Raw tare value for scale - obtained via averaging raw reading with no weight
+// on scale.
+pub const SCALE_RAW_TARE: f32 = 8192.0;
+// Raw tare value for scale - obtained via averaging raw reading with 25g
+// calibration weight, subtracting `SCALE_RAW_TARE` and dividing by 25.
+pub const SCALE_RAW_1G_STEP: f32 = (43599.0 - SCALE_RAW_TARE) / 25.0;

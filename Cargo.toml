@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name = "pi-test"
+name = "office-candy-weigher"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
@@ -15,7 +15,7 @@ cortex-m-rt = "0.7.5"
 
 embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-rp = { version = "0.9.0", features = ["rp2040", "defmt", "unstable-pac", "time-driver", "critical-section-impl"] }
+embassy-rp = { version = "0.9.0", features = ["rp2040", "defmt", "time-driver", "critical-section-impl"] }
 embassy-sync = { version = "0.7.2", features = ["defmt"] }
 embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-futures = "0.1.2"
@@ -24,6 +24,8 @@ futures = { version = "0.3.32", default-features = false }
 eg-seven-segment = "0.2.0"
 pin-project = "1.1.11" 
 hx711_spi = "0.7.0"
+static_cell = { version = "2.1.1", default-features = false }
+portable-atomic = { version = "1.13.1", features = ["critical-section"] }
 
 [profile.release]
 debug = 2
@@ -36,5 +38,7 @@ lto = true
 opt-level = "z"
 
 [features]
-# Enable use of rotary encoder as hardware sim
+# Enable use of rotary encoder as hardware sim for weigher
 hardware-sim = []
+# Enable use of software sim for weigher
+software-sim = []
