@@ -1,8 +1,8 @@
 use crate::config_consts::{BUTTON_SEMICIRCLE_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER};
 use crate::pimoroni_display::{DISPLAY_H, DISPLAY_W};
 use core::fmt::Write;
-use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
+use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
@@ -118,7 +118,7 @@ where
     if state.lolly_count_change >= 0 {
         core::write!(&mut lolly_count_change_str, "+{}", state.lolly_count_change)
     } else {
-        core::write!(&mut lolly_count_change_str, "-{}", state.lolly_count_change)
+        core::write!(&mut lolly_count_change_str, "{}", state.lolly_count_change)
     }
     .unwrap();
     let text_scale_weight = Text::new(&scale_weight_str, Point::new(40, 22), weight_text_style);
