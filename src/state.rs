@@ -1,15 +1,17 @@
 use crate::{
     candy_weigher_ui::{self, draw, DisplayState},
     config_consts::{
-        DEFAULT_LOLLY_WEIGHT, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
+        DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
+        MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
         TOTAL_LED_FADEOUT_STEPS,
     },
     pimoroni_display::PimoroniDisplayController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     Message,
 };
+use core::ops::Mul;
 use defmt::debug;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Instant};
 
 pub struct State {
     pub tare_weight_g: f32,
@@ -21,9 +23,44 @@ pub struct State {
     pub t_r_pressed: MomentaryButtonState,
     pub b_r_pressed: MomentaryButtonState,
     pub led_state: LedState,
-    pub last_updated: Instant,
+    pub backlight_state: DisplayBacklightState,
     pub last_display_state: Option<DisplayState>,
     pub last_led_state: Option<LedState>,
+    pub last_backlight_state: Option<DisplayBacklightState>,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone)]
+pub enum DisplayBacklightState {
+    Off,
+    LowPower { on_at: Instant },
+    On { on_at: Instant },
+}
+
+impl DisplayBacklightState {
+    pub fn next(self) -> Self {
+        match self {
+            DisplayBacklightState::Off => DisplayBacklightState::Off,
+            DisplayBacklightState::LowPower { .. } => DisplayBacklightState::Off,
+            DisplayBacklightState::On { on_at } => DisplayBacklightState::LowPower { on_at },
+        }
+    }
+    pub fn next_timer(
+        &self,
+        time_to_backlight_low: Duration,
+        time_from_backlight_low_to_off: Duration,
+    ) -> Option<Instant> {
+        match self {
+            DisplayBacklightState::Off => None,
+            DisplayBacklightState::LowPower { on_at } => Some(
+                on_at
+                    .saturating_add(time_to_backlight_low)
+                    .saturating_add(time_from_backlight_low_to_off),
+            ),
+            DisplayBacklightState::On { on_at } => {
+                Some(on_at.saturating_add(time_to_backlight_low))
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -33,18 +70,20 @@ pub enum MomentaryButtonState {
     PressedRecently {
         on_at: Instant,
     },
+    Held,
 }
 
 impl MomentaryButtonState {
     pub fn next(&self) -> Self {
         match self {
             MomentaryButtonState::Off => MomentaryButtonState::Off,
+            MomentaryButtonState::Held => MomentaryButtonState::Held,
             MomentaryButtonState::PressedRecently { .. } => MomentaryButtonState::Off,
         }
     }
     pub fn next_timer(&self, max_on_time: Duration) -> Option<Instant> {
         match self {
-            MomentaryButtonState::Off => None,
+            MomentaryButtonState::Off | MomentaryButtonState::Held => None,
             MomentaryButtonState::PressedRecently { on_at } => {
                 Some(on_at.saturating_add(max_on_time))
             }
@@ -136,19 +175,24 @@ impl Default for State {
             t_r_pressed: Default::default(),
             b_r_pressed: Default::default(),
             led_state: Default::default(),
-            last_updated: Instant::now(),
             last_display_state: Default::default(),
             last_led_state: Default::default(),
+            backlight_state: DisplayBacklightState::On {
+                on_at: Instant::now(),
+            },
+            last_backlight_state: Default::default(),
         }
     }
 }
 
 impl State {
     pub fn to_display_state(&self) -> DisplayState {
-        // Addition of 0.5 is a neat hack to round positive float to integer.
-        let tared_scale_weight_g = self.scale_weight_g - self.tare_weight_g;
-        let lolly_count = (tared_scale_weight_g / self.lolly_weight_g + 0.5) as u32;
-        let prev_lolly_count = (self.saved_tared_scale_weight_g / self.lolly_weight_g + 0.5) as u32;
+        // Round off to 1 d.p (prevent overdrawing to display)
+        let tared_scale_weight_g =
+            hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
+        let lolly_count = hack_round_f32(tared_scale_weight_g / self.lolly_weight_g);
+        let prev_lolly_count =
+            hack_round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
         DisplayState {
             scale_weight_g: self.scale_weight_g - self.tare_weight_g,
             lolly_weight_g: self.lolly_weight_g,
@@ -156,24 +200,56 @@ impl State {
             lolly_count_change: lolly_count as i32 - prev_lolly_count as i32,
             t_l_pressed: matches!(
                 self.t_l_pressed,
-                MomentaryButtonState::PressedRecently { .. }
+                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
             ),
             t_r_pressed: matches!(
                 self.t_r_pressed,
-                MomentaryButtonState::PressedRecently { .. }
+                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
             ),
             b_l_pressed: matches!(
                 self.b_l_pressed,
-                MomentaryButtonState::PressedRecently { .. }
+                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
             ),
             b_r_pressed: matches!(
                 self.b_r_pressed,
-                MomentaryButtonState::PressedRecently { .. }
+                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
             ),
         }
     }
-    pub fn get_transitions(&self) -> [Option<(Instant, for<'a> fn(&'a mut Self))>; 5] {
+    pub fn get_next_transitions(
+        &self,
+    ) -> Option<(
+        Instant,
+        impl Iterator<Item = for<'a> fn(&'a mut Self)> + use<>,
+    )> {
+        let transitions = self.get_transitions();
+        let min_duration = transitions
+            .into_iter()
+            .flatten()
+            .min_by_key(|(duration, _)| *duration)
+            .map(|(duration, _)| duration);
+        min_duration.map(move |min_duration| {
+            (
+                min_duration,
+                transitions
+                    .into_iter()
+                    .flatten()
+                    .filter(move |(duration, _)| *duration == min_duration)
+                    .map(|(_, transition)| transition),
+            )
+        })
+    }
+    fn get_transitions(&self) -> [Option<(Instant, for<'a> fn(&'a mut Self))>; 6] {
         [
+            self.backlight_state
+                .next_timer(TIME_TO_BACKLIGHT_LOW, TIME_FROM_BACKLIGHT_LOW_TO_OFF)
+                .map(|t| {
+                    (
+                        t,
+                        (|this: &mut Self| this.backlight_state = this.backlight_state.next())
+                            as for<'a> fn(&'a mut Self),
+                    )
+                }),
             self.t_l_pressed
                 .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
                 .map(|t| {
@@ -222,15 +298,49 @@ impl State {
     pub fn handle_message(&mut self, message: Message) {
         debug!("About to handle message: {}", message);
         match message {
+            Message::ButtonAHeld => {
+                self.t_l_pressed = MomentaryButtonState::Held;
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonBHeld => {
+                self.b_l_pressed = MomentaryButtonState::Held;
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonAHoldCancelled => {
+                self.t_l_pressed = MomentaryButtonState::Off;
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            Message::ButtonBHoldCancelled => {
+                self.b_l_pressed = MomentaryButtonState::Off;
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
             Message::ButtonAPressed => {
                 self.lolly_weight_g += 0.1;
-                self.t_l_pressed = MomentaryButtonState::PressedRecently {
+                if matches!(self.t_l_pressed, MomentaryButtonState::Off) {
+                    self.t_l_pressed = MomentaryButtonState::PressedRecently {
+                        on_at: Instant::now(),
+                    };
+                }
+                self.backlight_state = DisplayBacklightState::On {
                     on_at: Instant::now(),
                 };
             }
             Message::ButtonBPressed => {
                 self.lolly_weight_g -= 0.1;
-                self.b_l_pressed = MomentaryButtonState::PressedRecently {
+                if matches!(self.b_l_pressed, MomentaryButtonState::Off) {
+                    self.b_l_pressed = MomentaryButtonState::PressedRecently {
+                        on_at: Instant::now(),
+                    };
+                }
+                self.backlight_state = DisplayBacklightState::On {
                     on_at: Instant::now(),
                 };
             }
@@ -239,29 +349,52 @@ impl State {
                 self.t_r_pressed = MomentaryButtonState::PressedRecently {
                     on_at: Instant::now(),
                 };
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
             }
             Message::ButtonYPressed => {
                 self.tare_weight_g = self.scale_weight_g;
                 self.b_r_pressed = MomentaryButtonState::PressedRecently {
                     on_at: Instant::now(),
                 };
+                self.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
             }
             Message::WeightUpdate(w) => {
-                if w < self.scale_weight_g {
+                let prev_tared_scale_weight_g =
+                    hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32
+                        / 10.0;
+                let prev_lolly_count =
+                    hack_round_f32(prev_tared_scale_weight_g / self.lolly_weight_g);
+
+                self.scale_weight_g = w;
+                let tared_scale_weight_g =
+                    hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32
+                        / 10.0;
+                let lolly_count = hack_round_f32(tared_scale_weight_g / self.lolly_weight_g);
+
+                if lolly_count < prev_lolly_count {
                     self.led_state = LedState::Red {
                         total_steps: TOTAL_LED_FADEOUT_STEPS,
                         current_step: 0,
                         current_step_at: Instant::now(),
                     };
+                    self.backlight_state = DisplayBacklightState::On {
+                        on_at: Instant::now(),
+                    };
                 }
-                if w > self.scale_weight_g {
+                if lolly_count > prev_lolly_count {
                     self.led_state = LedState::Blue {
                         total_steps: TOTAL_LED_FADEOUT_STEPS,
                         current_step: 0,
                         current_step_at: Instant::now(),
                     };
+                    self.backlight_state = DisplayBacklightState::On {
+                        on_at: Instant::now(),
+                    };
                 }
-                self.scale_weight_g = w;
             }
         }
     }
@@ -305,4 +438,19 @@ pub fn output_state(
             .draw_via_framebuffer(|display| candy_weigher_ui::draw(&next_display_state, display));
         state.last_display_state = Some(next_display_state);
     }
+    if state.last_backlight_state.as_ref() != Some(&state.backlight_state) {
+        debug!("Updating backlight");
+        match state.backlight_state {
+            DisplayBacklightState::Off => display_controller.turn_off_display(),
+            DisplayBacklightState::LowPower { .. } => {
+                display_controller.turn_on_display(LOW_BACKLIGHT_PERCENTAGE)
+            }
+            DisplayBacklightState::On { .. } => display_controller.turn_on_display(Percentage(100)),
+        }
+        state.last_backlight_state = Some(state.backlight_state);
+    }
+}
+// Addition of 0.5 is a neat hack to round positive float to integer.
+fn hack_round_f32(x: f32) -> u32 {
+    (x + 0.5) as u32
 }

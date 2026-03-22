@@ -30,7 +30,14 @@ pub async fn pico_display_button_a_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
-    manage_button(button_a, Message::ButtonAPressed, tx).await;
+    manage_holdable_button(
+        button_a,
+        Message::ButtonAPressed,
+        Message::ButtonAHeld,
+        Message::ButtonAHoldCancelled,
+        tx,
+    )
+    .await;
 }
 #[embassy_executor::task]
 pub async fn pico_display_button_b_manager(
@@ -38,7 +45,14 @@ pub async fn pico_display_button_b_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
-    manage_button(button_b, Message::ButtonBPressed, tx).await;
+    manage_holdable_button(
+        button_b,
+        Message::ButtonBPressed,
+        Message::ButtonBHeld,
+        Message::ButtonBHoldCancelled,
+        tx,
+    )
+    .await;
 }
 #[embassy_executor::task]
 pub async fn pico_display_button_x_manager(
@@ -57,9 +71,11 @@ pub async fn pico_display_button_y_manager(
     manage_button(button_y, Message::ButtonYPressed, tx).await;
 }
 
-async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
+async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     mut button: Input<'static>,
     pressed_message: M,
+    held_message: M,
+    finished_holding_message: M,
     tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
 ) where
     M: Copy,
@@ -77,15 +93,32 @@ async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
         {
             continue;
         }
+        tx.send(held_message).await;
         tx.send(pressed_message).await;
         while let Either::Second(_) = select(
             button.wait_for_high(),
-            embassy_time::Timer::after_millis(50),
+            embassy_time::Timer::after_millis(100),
         )
         .await
         {
             tx.send(pressed_message).await;
         }
+        tx.send(finished_holding_message).await;
+    }
+}
+
+async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
+    mut button: Input<'static>,
+    pressed_message: M,
+    tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
+) where
+    M: Copy,
+    Mutex: RawMutex,
+{
+    loop {
+        button.wait_for_low().await;
+        tx.send(pressed_message).await;
+        button.wait_for_high().await;
     }
 }
 

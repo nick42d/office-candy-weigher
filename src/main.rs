@@ -6,14 +6,11 @@ use crate::config_consts::{
 };
 use crate::pimoroni_display::PimoroniDisplayController;
 use crate::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController};
-use crate::round_robin_select::{
-    round_robin_select3, round_robin_select_array, PollFirst2, PollFirst3,
-};
+use crate::round_robin_select::{round_robin_select3, PollFirst2, PollFirst3};
 use crate::state::{output_state, LedState, MomentaryButtonState, State};
 use crate::tasks::{hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
-    hx710_load_cell_manager_rotary_encoder, pico_display_button_b_manager,
-    pico_display_button_x_manager, pico_display_button_y_manager,
+    pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use core::cell::RefCell;
 use core::convert::identity;
@@ -45,6 +42,10 @@ mod tasks;
 enum Message {
     ButtonAPressed,
     ButtonBPressed,
+    ButtonAHeld,
+    ButtonBHeld,
+    ButtonAHoldCancelled,
+    ButtonBHoldCancelled,
     ButtonXPressed,
     ButtonYPressed,
     WeightUpdate(f32),
@@ -119,7 +120,7 @@ async fn main(spawner: Spawner) {
         .unwrap();
     #[cfg(feature = "hardware-sim")]
     spawner
-        .spawn(hx710_load_cell_manager_rotary_encoder(
+        .spawn(tasks::hx710_load_cell_manager_rotary_encoder(
             peripherals.PIN_26,
             peripherals.PIN_27,
             peripherals.PIO0,
@@ -134,33 +135,30 @@ async fn main(spawner: Spawner) {
         &mut display_controller,
         &mut display_led_controller,
     );
-    display_controller.turn_on_display(Percentage(100));
 
     let rx = CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
     let mut poll_first_1 = PollFirst2::A;
-    let mut poll_first_2 = 0;
     loop {
         // Interleave state transitions
-        let state_transitions_futures = state.get_transitions().map(|x| match x {
+        let state_transitions_future = match state.get_next_transitions() {
             Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_| f)),
             None => futures::future::Either::Left(core::future::pending()),
-        });
-        // let result = round_robin_select::round_robin_select(
-        //     &mut poll_first_1,
-        //     rx.receive(),
-        //     round_robin_select_array(&mut poll_first_2, state_transitions_futures),
-        // )
-        // .await;
+        };
         let result = round_robin_select::round_robin_select(
             &mut poll_first_1,
             rx.receive(),
-            embassy_futures::select::select_array(state_transitions_futures),
+            state_transitions_future,
         )
         .await;
         match result {
             Either::First(message) => state.handle_message(message),
-            Either::Second((transition, _)) => transition(&mut state),
+            Either::Second(transitions) => {
+                debug!("State transitioning");
+                for transition in transitions {
+                    transition(&mut state)
+                }
+            }
         }
         output_state(
             &mut state,
