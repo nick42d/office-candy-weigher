@@ -4,7 +4,7 @@
 use crate::pimoroni_display::PimoroniDisplayController;
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
-use crate::state::{output_state, State};
+use crate::state::{State, output_state};
 use crate::tasks::{hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
@@ -14,8 +14,8 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::select::Either;
 use embassy_rp::spi::{Config, Spi};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Timer;
 use futures::FutureExt;

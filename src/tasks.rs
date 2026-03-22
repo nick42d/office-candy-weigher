@@ -1,12 +1,10 @@
-use crate::{Message, CHANNEL_SIZE};
+use crate::{CHANNEL_SIZE, Message};
 use defmt::info;
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use embassy_rp::gpio::{Input, Pull};
-use embassy_rp::peripherals::{
-    PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIO1,
-};
+use embassy_rp::peripherals::{PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIO1};
 use embassy_rp::pio::{self, InterruptHandler, Pio, ShiftDirection};
-use embassy_rp::{bind_interrupts, Peri};
+use embassy_rp::{Peri, bind_interrupts};
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
