@@ -3,7 +3,7 @@ use core::cell::RefCell;
 use crate::config_consts::{SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
 use crate::hx710::{PioHX710, PioHX710Program};
 use crate::pimoroni_display::PimoroniDisplayController;
-use crate::{candy_weigher_ui, Message, CHANNEL_SIZE, CORE1_SIGNAL};
+use crate::{candy_weigher_ui, Message, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
 use defmt::info;
 use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
@@ -55,7 +55,7 @@ pub async fn display_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_a_manager(
     pin12: Peri<'static, PIN_12>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
     manage_repeating_button(
@@ -70,7 +70,7 @@ pub async fn pico_display_button_a_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_b_manager(
     pin13: Peri<'static, PIN_13>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
     manage_repeating_button(
@@ -85,7 +85,7 @@ pub async fn pico_display_button_b_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_x_manager(
     pin14: Peri<'static, PIN_14>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_x = Input::new(pin14, Pull::Up);
     manage_holdable_button(
@@ -100,7 +100,7 @@ pub async fn pico_display_button_x_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_y_manager(
     pin15: Peri<'static, PIN_15>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_y = Input::new(pin15, Pull::Up);
     manage_holdable_button(
@@ -179,7 +179,7 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
 #[cfg(feature = "software-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_simulated(
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     const TEST_WEIGHT_DATA: &[(f32, Duration)] = &[
         (0.0, Duration::from_secs(5)),
@@ -210,7 +210,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
     // Button: vvv
     // pin28: Peri<'static, PIN_28>,
     pio0: Peri<'static, embassy_rp::peripherals::PIO0>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let Pio {
         mut common, sm0, ..
@@ -242,7 +242,7 @@ pub async fn hx710_load_cell_manager(
     pin10: Peri<'static, PIN_10>,
     pin11: Peri<'static, PIN_11>,
     pio1: Peri<'static, PIO1>,
-    tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE>,
 ) {
     let Pio {
         mut common, sm0, ..

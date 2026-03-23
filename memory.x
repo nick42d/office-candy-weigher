@@ -1,6 +1,7 @@
 MEMORY {
     BOOT2 : ORIGIN = 0x10000000, LENGTH = 0x100
-    FLASH : ORIGIN = 0x10000100, LENGTH = 2048K - 0x100
+    FLASH : ORIGIN = 0x10000100, LENGTH = 2040K - 0x100
+    STORAGE : ORIGIN = 0x10000100 + 2040K - 0x100, LENGTH = 8K
 
     /* Pick one of the two options for RAM layout     */
 

@@ -2,6 +2,7 @@
 #![no_main]
 
 use crate::candy_weigher_ui::DisplayState;
+use crate::flash::{Config, FlashController};
 use crate::pimoroni_display::PimoroniDisplayBacklightController;
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
@@ -22,9 +23,13 @@ use futures::FutureExt;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-const CHANNEL_SIZE: usize = 16;
+const MESSAGE_CHANNEL_SIZE: usize = 16;
+// STORAGE block in memory.x starts at 2040KB.
+pub const FLASH_STORAGE_OFFSET_BYTES: u32 = 2040 * 1024;
+// STORAGE in memory.x is 8KB.
+const FLASH_STORAGE_SIZE_BYTES: u32 = 8 * 1024;
 
-static CHANNEL: Channel<ThreadModeRawMutex, Message, CHANNEL_SIZE> = Channel::new();
+static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE> = Channel::new();
 // Give core1 (second core) it's own stack.
 static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();
 static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
@@ -32,6 +37,7 @@ static CORE1_SIGNAL: Signal<CriticalSectionRawMutex, DisplayState> = Signal::new
 
 mod candy_weigher_ui;
 mod config_consts;
+mod flash;
 mod hx710;
 mod pimoroni_display;
 mod pimoroni_display_leds;
@@ -74,6 +80,18 @@ async fn main(spawner: Spawner) {
         PimoroniDisplayBacklightController::new(peripherals.PIN_20, peripherals.PWM_SLICE2);
     info!("Display backlight controller initialised");
 
+    let mut flash_controller: FlashController<'_, FLASH_STORAGE_OFFSET_BYTES> =
+        FlashController::new(peripherals.FLASH, peripherals.DMA_CH1);
+    info!("Flash controller initialised");
+
+    let cfg: Config = flash_controller
+        .read::<_, 256>()
+        .await
+        .inspect_err(|e| warn!("Failed to read config from flash. Was one stored? e: {}", e))
+        .unwrap_or_default();
+    info!("Loaded config: {}", cfg);
+    flash_controller.write::<_, 4096>(&Config::default());
+
     spawn_core1(
         peripherals.CORE1,
         CORE1_STACK.init(Stack::new()),
@@ -97,25 +115,25 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(pico_display_button_a_manager(
             peripherals.PIN_12,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     spawner
         .spawn(pico_display_button_b_manager(
             peripherals.PIN_13,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     spawner
         .spawn(pico_display_button_x_manager(
             peripherals.PIN_14,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     spawner
         .spawn(pico_display_button_y_manager(
             peripherals.PIN_15,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     spawner
@@ -123,7 +141,7 @@ async fn main(spawner: Spawner) {
             peripherals.PIN_10,
             peripherals.PIN_11,
             peripherals.PIO1,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     #[cfg(feature = "hardware-sim")]
@@ -132,23 +150,28 @@ async fn main(spawner: Spawner) {
             peripherals.PIN_26,
             peripherals.PIN_27,
             peripherals.PIO0,
-            CHANNEL.sender(),
+            MESSAGE_CHANNEL.sender(),
         ))
         .unwrap();
     #[cfg(feature = "software-sim")]
     spawner
-        .spawn(tasks::hx710_load_cell_manager_simulated(CHANNEL.sender()))
+        .spawn(tasks::hx710_load_cell_manager_simulated(
+            MESSAGE_CHANNEL.sender(),
+        ))
         .unwrap();
     info!("Core0 tasks spawned");
 
     let mut state = State::default();
+    state.lolly_weight_g = cfg.lolly_weight_g;
+    state.tare_weight_g = cfg.tare_weight_g;
+
     output_state(
         &mut state,
         &mut display_backlight_controller,
         &mut display_led_controller,
     );
 
-    let rx = CHANNEL.receiver();
+    let rx = MESSAGE_CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
     let mut poll_first_1 = PollFirst2::A;
     loop {
@@ -164,7 +187,7 @@ async fn main(spawner: Spawner) {
         )
         .await;
         match result {
-            Either::First(message) => state.handle_message(message),
+            Either::First(message) => state.handle_message(&mut flash_controller, message),
             Either::Second(transitions) => {
                 debug!("State transitioning");
                 for transition in transitions {

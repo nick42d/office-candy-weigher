@@ -5,6 +5,7 @@ use crate::{
         MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
         TOTAL_LED_FADEOUT_STEPS,
     },
+    flash::{Config, FlashController},
     pimoroni_display::PimoroniDisplayBacklightController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     Message, CORE1_SIGNAL,
@@ -296,7 +297,11 @@ impl State {
         ]
         .into_iter()
     }
-    pub fn handle_message(&mut self, message: Message) {
+    pub fn handle_message(
+        &mut self,
+        flash_controller: &mut FlashController<'_, { crate::FLASH_STORAGE_OFFSET_BYTES }>,
+        message: Message,
+    ) {
         debug!("About to handle message: {}", message);
         match message {
             Message::ButtonAHeld => {
@@ -363,10 +368,13 @@ impl State {
                     on_at: Instant::now(),
                 };
             }
-            Message::ButtonXHeld => todo!(),
-            Message::ButtonYHeld => todo!(),
-            Message::ButtonXReleased => todo!(),
-            Message::ButtonYReleased => todo!(),
+            Message::ButtonXHeld => flash_controller.write::<_, 4096>(&Config {
+                tare_weight_g: self.tare_weight_g,
+                lolly_weight_g: self.lolly_weight_g,
+            }),
+            Message::ButtonYHeld => (),
+            Message::ButtonXReleased => (),
+            Message::ButtonYReleased => (),
             Message::WeightUpdate(w) => {
                 let prev_tared_scale_weight_g =
                     hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32
