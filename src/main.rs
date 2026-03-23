@@ -5,7 +5,7 @@ use crate::candy_weigher_ui::DisplayState;
 use crate::pimoroni_display::PimoroniDisplayBacklightController;
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
-use crate::state::{State, output_state};
+use crate::state::{output_state, State};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
@@ -13,14 +13,13 @@ use crate::tasks::{
 use defmt::*;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
-use embassy_rp::multicore::{Stack, spawn_core1};
+use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use futures::FutureExt;
 use static_cell::StaticCell;
-
 use {defmt_rtt as _, panic_probe as _};
 
 const CHANNEL_SIZE: usize = 16;
@@ -50,6 +49,10 @@ enum Message {
     ButtonBHoldCancelled,
     ButtonXPressed,
     ButtonYPressed,
+    ButtonXHeld,
+    ButtonYHeld,
+    ButtonXReleased,
+    ButtonYReleased,
     WeightUpdate(f32),
 }
 

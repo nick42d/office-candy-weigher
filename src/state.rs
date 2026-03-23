@@ -1,5 +1,4 @@
 use crate::{
-    CORE1_SIGNAL, Message,
     candy_weigher_ui::DisplayState,
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
@@ -8,6 +7,7 @@ use crate::{
     },
     pimoroni_display::PimoroniDisplayBacklightController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    Message, CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;
@@ -224,22 +224,22 @@ impl State {
     )> {
         let transitions = self.get_transitions();
         let min_duration = transitions
-            .into_iter()
             .flatten()
             .min_by_key(|(duration, _)| *duration)
             .map(|(duration, _)| duration);
         min_duration.map(move |min_duration| {
             (
                 min_duration,
-                transitions
-                    .into_iter()
+                self.get_transitions()
                     .flatten()
                     .filter(move |(duration, _)| *duration == min_duration)
                     .map(|(_, transition)| transition),
             )
         })
     }
-    fn get_transitions(&self) -> [Option<(Instant, for<'a> fn(&'a mut Self))>; 6] {
+    fn get_transitions(
+        &self,
+    ) -> impl Iterator<Item = Option<(Instant, for<'a> fn(&'a mut Self))>> + use<> {
         [
             self.backlight_state
                 .next_timer(TIME_TO_BACKLIGHT_LOW, TIME_FROM_BACKLIGHT_LOW_TO_OFF)
@@ -294,6 +294,7 @@ impl State {
                 )
             }),
         ]
+        .into_iter()
     }
     pub fn handle_message(&mut self, message: Message) {
         debug!("About to handle message: {}", message);
@@ -362,6 +363,10 @@ impl State {
                     on_at: Instant::now(),
                 };
             }
+            Message::ButtonXHeld => todo!(),
+            Message::ButtonYHeld => todo!(),
+            Message::ButtonXReleased => todo!(),
+            Message::ButtonYReleased => todo!(),
             Message::WeightUpdate(w) => {
                 let prev_tared_scale_weight_g =
                     hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32

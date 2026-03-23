@@ -3,9 +3,9 @@ use core::cell::RefCell;
 use crate::config_consts::{SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
 use crate::hx710::{PioHX710, PioHX710Program};
 use crate::pimoroni_display::PimoroniDisplayController;
-use crate::{CHANNEL_SIZE, CORE1_SIGNAL, Message, candy_weigher_ui};
+use crate::{candy_weigher_ui, Message, CHANNEL_SIZE, CORE1_SIGNAL};
 use defmt::info;
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{
     DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19, PIO1,
@@ -13,9 +13,9 @@ use embassy_rp::peripherals::{
 };
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::spi::{self, Spi};
-use embassy_rp::{Peri, bind_interrupts};
-use embassy_sync::blocking_mutex::Mutex;
+use embassy_rp::{bind_interrupts, Peri};
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
+use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
 
@@ -58,7 +58,7 @@ pub async fn pico_display_button_a_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
-    manage_holdable_button(
+    manage_repeating_button(
         button_a,
         Message::ButtonAPressed,
         Message::ButtonAHeld,
@@ -73,7 +73,7 @@ pub async fn pico_display_button_b_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
-    manage_holdable_button(
+    manage_repeating_button(
         button_b,
         Message::ButtonBPressed,
         Message::ButtonBHeld,
@@ -88,7 +88,14 @@ pub async fn pico_display_button_x_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_x = Input::new(pin14, Pull::Up);
-    manage_button(button_x, Message::ButtonXPressed, tx).await;
+    manage_holdable_button(
+        button_x,
+        Message::ButtonXPressed,
+        Message::ButtonXHeld,
+        Message::ButtonXReleased,
+        tx,
+    )
+    .await;
 }
 #[embassy_executor::task]
 pub async fn pico_display_button_y_manager(
@@ -96,10 +103,17 @@ pub async fn pico_display_button_y_manager(
     tx: Sender<'static, ThreadModeRawMutex, Message, CHANNEL_SIZE>,
 ) {
     let button_y = Input::new(pin15, Pull::Up);
-    manage_button(button_y, Message::ButtonYPressed, tx).await;
+    manage_holdable_button(
+        button_y,
+        Message::ButtonYPressed,
+        Message::ButtonYHeld,
+        Message::ButtonYReleased,
+        tx,
+    )
+    .await;
 }
 
-async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
+async fn manage_repeating_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     mut button: Input<'static>,
     pressed_message: M,
     held_message: M,
@@ -135,9 +149,11 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     }
 }
 
-async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
+async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     mut button: Input<'static>,
     pressed_message: M,
+    held_message: M,
+    released_message: M,
     tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
 ) where
     M: Copy,
@@ -146,7 +162,17 @@ async fn manage_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     loop {
         button.wait_for_low().await;
         tx.send(pressed_message).await;
+        // Wait for long press
+        if let Either::Second(_) = select(
+            button.wait_for_high(),
+            embassy_time::Timer::after_millis(500),
+        )
+        .await
+        {
+            tx.send(held_message).await;
+        }
         button.wait_for_high().await;
+        tx.send(released_message).await;
     }
 }
 
