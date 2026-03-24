@@ -14,6 +14,7 @@ const PICO_FLASH_SIZE_BYTES: usize = 2 * 1024 * 1024;
 pub struct Config {
     pub tare_weight_dg: i32,
     pub lolly_weight_dg: i32,
+    pub saved_tared_scale_weight: i32,
 }
 
 impl Default for Config {
@@ -21,6 +22,7 @@ impl Default for Config {
         Self {
             tare_weight_dg: Default::default(),
             lolly_weight_dg: round_f32(DEFAULT_LOLLY_WEIGHT * 10.0),
+            saved_tared_scale_weight: Default::default(),
         }
     }
 }

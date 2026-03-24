@@ -88,7 +88,6 @@ async fn main(spawner: Spawner) {
         .inspect_err(|e| warn!("Failed to read config from flash. Was one stored? e: {}", e))
         .unwrap_or_default();
     info!("Loaded config: {}", cfg);
-    flash_controller.write::<_, 4096>(&Config::default());
 
     spawn_core1(
         peripherals.CORE1,
@@ -164,6 +163,7 @@ async fn main(spawner: Spawner) {
     let mut state = State::default();
     state.lolly_weight_g = (cfg.lolly_weight_dg as f32) / 10.0;
     state.tare_weight_g = (cfg.tare_weight_dg as f32) / 10.0;
+    state.saved_tared_scale_weight_g = (cfg.saved_tared_scale_weight as f32) / 10.0;
 
     output_state(&mut state, &mut display_led_controller);
 

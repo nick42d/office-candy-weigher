@@ -190,7 +190,7 @@ impl State {
             round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
         let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g)
             .try_into()
-            .unwrap();
+            .unwrap_or_default();
         let prev_lolly_count = round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
         DisplayState {
             scale_weight_g: self.scale_weight_g - self.tare_weight_g,
@@ -296,11 +296,7 @@ impl State {
         ]
         .into_iter()
     }
-    pub fn handle_message(
-        &mut self,
-        flash_controller: &mut FlashController<'_, { crate::FLASH_STORAGE_OFFSET_BYTES }>,
-        message: Message,
-    ) {
+    pub fn handle_message(&mut self, flash_controller: &mut FlashController<'_>, message: Message) {
         debug!("About to handle message: {}", message);
         match message {
             Message::ButtonAHeld => {
@@ -368,8 +364,9 @@ impl State {
                 };
             }
             Message::ButtonXHeld => flash_controller.write::<_, 4096>(&Config {
-                tare_weight_g: self.tare_weight_g,
-                lolly_weight_g: self.lolly_weight_g,
+                tare_weight_dg: round_f32(self.tare_weight_g * 10.0),
+                lolly_weight_dg: round_f32(self.lolly_weight_g * 10.0),
+                saved_tared_scale_weight: round_f32(self.saved_tared_scale_weight_g * 10.0),
             }),
             Message::ButtonYHeld => (),
             Message::ButtonXReleased => (),

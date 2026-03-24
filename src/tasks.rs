@@ -262,7 +262,6 @@ pub async fn hx710_load_cell_manager(
     } = Pio::new(pio1, Irqs);
     let program = PioHX710Program::new(&mut common);
     let mut load_cell = PioHX710::new(&mut common, sm0, pin11, pin10, &program);
-    info!("HX710 PIO Task Started on PIO1");
 
     // Exponential moving average - to smooth readings.
     const EMA_FILTER_ALPHA: f32 = 0.2;

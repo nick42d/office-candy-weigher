@@ -1,8 +1,8 @@
 //! Implementation of HX710 (specifically HX710C but could be further
 //! generalised) for RP2040 using PIO.
 use embassy_rp::{
-    Peri,
     pio::{self, Common, Instance, LoadedProgram, PioPin, ShiftDirection, StateMachine},
+    Peri,
 };
 
 pub struct PioHX710Program<'a, PIO: Instance>(LoadedProgram<'a, PIO>);
