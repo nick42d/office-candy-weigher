@@ -448,7 +448,7 @@ pub fn output_state(
 }
 
 /// Implementation of f32::round in no_std environment.
-fn round_f32(x: f32) -> i32 {
+pub fn round_f32(x: f32) -> i32 {
     if x >= 0.0 {
         (x + 0.5) as i32
     } else {

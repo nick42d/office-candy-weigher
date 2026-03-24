@@ -75,8 +75,11 @@ async fn main(spawner: Spawner) {
     );
     info!("LED controller initialised");
 
-    let mut flash_controller: FlashController<'_, FLASH_STORAGE_OFFSET_BYTES> =
-        FlashController::new(peripherals.FLASH, peripherals.DMA_CH1);
+    let mut flash_controller: FlashController<'_> = FlashController::new(
+        peripherals.FLASH,
+        peripherals.DMA_CH1,
+        FLASH_STORAGE_OFFSET_BYTES,
+    );
     info!("Flash controller initialised");
 
     let cfg: Config = flash_controller
@@ -159,8 +162,8 @@ async fn main(spawner: Spawner) {
     info!("Core0 tasks spawned");
 
     let mut state = State::default();
-    state.lolly_weight_g = cfg.lolly_weight_g;
-    state.tare_weight_g = cfg.tare_weight_g;
+    state.lolly_weight_g = (cfg.lolly_weight_dg as f32) / 10.0;
+    state.tare_weight_g = (cfg.tare_weight_dg as f32) / 10.0;
 
     output_state(&mut state, &mut display_led_controller);
 
