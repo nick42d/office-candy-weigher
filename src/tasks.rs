@@ -1,15 +1,16 @@
 use core::cell::RefCell;
 
-use crate::config_consts::{SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
+use crate::config_consts::{LOW_BACKLIGHT_PERCENTAGE, SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
 use crate::hx710::{PioHX710, PioHX710Program};
 use crate::pimoroni_display::PimoroniDisplayController;
+use crate::pimoroni_display_leds::Percentage;
 use crate::{candy_weigher_ui, Message, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
 use defmt::info;
 use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{
-    DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19, PIO1,
-    SPI0,
+    DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
+    PIN_20, PIO1, PWM_SLICE2, SPI0,
 };
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::spi::{self, Spi};
@@ -36,6 +37,8 @@ pub async fn display_manager(
     pin17: Peri<'static, PIN_17>,
     pin18: Peri<'static, PIN_18>,
     pin19: Peri<'static, PIN_19>,
+    pin20: Peri<'static, PIN_20>,
+    slice2: Peri<'static, PWM_SLICE2>,
     spi0: Peri<'static, SPI0>,
     dma0: Peri<'static, DMA_CH0>,
 ) {
@@ -43,12 +46,22 @@ pub async fn display_manager(
     let spi = Spi::new_txonly(spi0, pin18, pin19, dma0, spi::Config::default());
     let spi_bus = Mutex::new(RefCell::new(spi));
     let mut display_buffer = [0u8; 512];
-    let mut display = PimoroniDisplayController::new(pin16, pin17, &spi_bus, &mut display_buffer);
+    let mut display =
+        PimoroniDisplayController::new(pin16, pin17, pin20, slice2, &spi_bus, &mut display_buffer);
     info!("Display controller initialised");
 
     loop {
         let next_frame = CORE1_SIGNAL.wait().await;
         display.draw_via_framebuffer(|display| candy_weigher_ui::draw(&next_frame, display));
+        match next_frame.backlight_state {
+            crate::state::DisplayBacklightState::Off => display.turn_off_display(),
+            crate::state::DisplayBacklightState::LowPower { .. } => {
+                display.turn_on_display(LOW_BACKLIGHT_PERCENTAGE)
+            }
+            crate::state::DisplayBacklightState::On { .. } => {
+                display.turn_on_display(Percentage(100))
+            }
+        }
     }
 }
 

@@ -3,26 +3,26 @@ use core::cell::RefCell;
 use defmt::debug;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_rp::{
-    Peri,
     gpio::{Level, Output},
     peripherals::{PIN_16, PIN_17, PIN_20, PWM_SLICE2, SPI0},
     pwm::{self, Pwm},
     spi::{self, Async, Spi},
+    Peri,
 };
-use embassy_sync::blocking_mutex::{Mutex, raw::NoopRawMutex};
+use embassy_sync::blocking_mutex::{raw::NoopRawMutex, Mutex};
 use embassy_time::Delay;
 use embedded_graphics::{
     framebuffer::Framebuffer,
     pixelcolor::{
-        Rgb565,
         raw::{BigEndian, RawU16},
+        Rgb565,
     },
 };
 use mipidsi::{
-    Builder, Display, NoResetPin,
     interface::SpiInterface,
     models::ST7789,
     options::{Orientation, Rotation},
+    Builder, Display, NoResetPin,
 };
 
 pub const DISPLAY_FREQ: u32 = 16_000_000;
@@ -52,38 +52,23 @@ pub struct PimoroniDisplayController<'a> {
         DISPLAY_H_AS_USIZE,
         DISPLAY_BYTES,
     >,
-}
-pub struct PimoroniDisplayBacklightController<'a> {
     backlight: Pwm<'a>,
-    backlight_conf: pwm::Config,
+    backlight_pwm_conf: pwm::Config,
 }
 
-impl<'a> PimoroniDisplayBacklightController<'a> {
-    pub fn new(pin20: Peri<'a, PIN_20>, slice2: Peri<'a, PWM_SLICE2>) -> Self {
-        let mut backlight_pwm_conf = pwm::Config::default();
-        backlight_pwm_conf.top = BACKLIGHT_PWM_TOP;
-        let backlight = Pwm::new_output_a(slice2, pin20, backlight_pwm_conf.clone());
-        Self {
-            backlight,
-            backlight_conf: backlight_pwm_conf,
-        }
-    }
-    pub fn turn_off_display(&mut self) {
-        self.backlight_conf.compare_a = 0;
-        self.backlight.set_config(&self.backlight_conf);
-    }
-    pub fn turn_on_display(&mut self, percentage: Percentage) {
-        self.backlight_conf.compare_a = BACKLIGHT_PWM_TOP / 100 * percentage.0;
-        self.backlight.set_config(&self.backlight_conf);
-    }
-}
 impl<'a> PimoroniDisplayController<'a> {
     pub fn new(
         pin16: Peri<'a, PIN_16>,
         pin17: Peri<'a, PIN_17>,
+        pin20: Peri<'a, PIN_20>,
+        slice2: Peri<'a, PWM_SLICE2>,
         spi_bus: &'a Mutex<NoopRawMutex, RefCell<Spi0<'a>>>,
         buffer: &'a mut [u8; 512],
     ) -> Self {
+        let mut backlight_pwm_conf = pwm::Config::default();
+        backlight_pwm_conf.top = BACKLIGHT_PWM_TOP;
+        let backlight = Pwm::new_output_a(slice2, pin20, backlight_pwm_conf.clone());
+
         // dcx is the data command/control output required for the display
         // 0 = command, 1 = data
         let display_dcx = Output::new(pin16, Level::Low);
@@ -119,6 +104,21 @@ impl<'a> PimoroniDisplayController<'a> {
         Self {
             display,
             framebuffer,
+            backlight,
+            backlight_pwm_conf,
+        }
+    }
+    pub fn turn_off_display(&mut self) {
+        if self.backlight_pwm_conf.compare_a != 0 {
+            self.backlight_pwm_conf.compare_a = 0;
+            self.backlight.set_config(&self.backlight_pwm_conf);
+        }
+    }
+    pub fn turn_on_display(&mut self, percentage: Percentage) {
+        let target_pwm = BACKLIGHT_PWM_TOP / 100 * percentage.0;
+        if self.backlight_pwm_conf.compare_a != target_pwm {
+            self.backlight_pwm_conf.compare_a = target_pwm;
+            self.backlight.set_config(&self.backlight_pwm_conf);
         }
     }
     pub fn draw_via_framebuffer(

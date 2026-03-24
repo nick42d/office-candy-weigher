@@ -6,7 +6,6 @@ use crate::{
         TOTAL_LED_FADEOUT_STEPS,
     },
     flash::{Config, FlashController},
-    pimoroni_display::PimoroniDisplayBacklightController,
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     Message, CORE1_SIGNAL,
 };
@@ -27,7 +26,6 @@ pub struct State {
     pub backlight_state: DisplayBacklightState,
     pub last_display_state: Option<DisplayState>,
     pub last_led_state: Option<LedState>,
-    pub last_backlight_state: Option<DisplayBacklightState>,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -181,7 +179,6 @@ impl Default for State {
             backlight_state: DisplayBacklightState::On {
                 on_at: Instant::now(),
             },
-            last_backlight_state: Default::default(),
         }
     }
 }
@@ -190,15 +187,16 @@ impl State {
     pub fn to_display_state(&self) -> DisplayState {
         // Round off to 1 d.p (prevent overdrawing to display)
         let tared_scale_weight_g =
-            hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
-        let lolly_count = hack_round_f32(tared_scale_weight_g / self.lolly_weight_g);
-        let prev_lolly_count =
-            hack_round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
+            round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
+        let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g)
+            .try_into()
+            .unwrap();
+        let prev_lolly_count = round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
         DisplayState {
             scale_weight_g: self.scale_weight_g - self.tare_weight_g,
             lolly_weight_g: self.lolly_weight_g,
             lolly_count,
-            lolly_count_change: lolly_count as i32 - prev_lolly_count as i32,
+            lolly_count_change: lolly_count as i32 - prev_lolly_count,
             t_l_pressed: matches!(
                 self.t_l_pressed,
                 MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
@@ -215,6 +213,7 @@ impl State {
                 self.b_r_pressed,
                 MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
             ),
+            backlight_state: self.backlight_state,
         }
     }
     pub fn get_next_transitions(
@@ -377,16 +376,13 @@ impl State {
             Message::ButtonYReleased => (),
             Message::WeightUpdate(w) => {
                 let prev_tared_scale_weight_g =
-                    hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32
-                        / 10.0;
-                let prev_lolly_count =
-                    hack_round_f32(prev_tared_scale_weight_g / self.lolly_weight_g);
+                    round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
+                let prev_lolly_count = round_f32(prev_tared_scale_weight_g / self.lolly_weight_g);
 
                 self.scale_weight_g = w;
                 let tared_scale_weight_g =
-                    hack_round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32
-                        / 10.0;
-                let lolly_count = hack_round_f32(tared_scale_weight_g / self.lolly_weight_g);
+                    round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
+                let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g);
 
                 if lolly_count < prev_lolly_count {
                     self.led_state = LedState::Red {
@@ -415,7 +411,6 @@ impl State {
 
 pub fn output_state(
     state: &mut State,
-    display_backlight_controller: &mut PimoroniDisplayBacklightController,
     display_led_controller: &mut PimoroniDisplayRgbLedController,
 ) {
     if state.last_led_state.as_ref() != Some(&state.led_state) {
@@ -450,21 +445,13 @@ pub fn output_state(
         CORE1_SIGNAL.signal(next_display_state.clone());
         state.last_display_state = Some(next_display_state);
     }
-    if state.last_backlight_state.as_ref() != Some(&state.backlight_state) {
-        debug!("Updating backlight");
-        match state.backlight_state {
-            DisplayBacklightState::Off => display_backlight_controller.turn_off_display(),
-            DisplayBacklightState::LowPower { .. } => {
-                display_backlight_controller.turn_on_display(LOW_BACKLIGHT_PERCENTAGE)
-            }
-            DisplayBacklightState::On { .. } => {
-                display_backlight_controller.turn_on_display(Percentage(100))
-            }
-        }
-        state.last_backlight_state = Some(state.backlight_state);
-    }
 }
-// Addition of 0.5 is a neat hack to round positive float to integer.
-fn hack_round_f32(x: f32) -> u32 {
-    (x + 0.5) as u32
+
+/// Implementation of f32::round in no_std environment.
+fn round_f32(x: f32) -> i32 {
+    if x >= 0.0 {
+        (x + 0.5) as i32
+    } else {
+        (x - 0.5) as i32
+    }
 }

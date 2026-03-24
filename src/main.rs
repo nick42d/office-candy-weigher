@@ -3,7 +3,6 @@
 
 use crate::candy_weigher_ui::DisplayState;
 use crate::flash::{Config, FlashController};
-use crate::pimoroni_display::PimoroniDisplayBacklightController;
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
 use crate::state::{output_state, State};
@@ -76,10 +75,6 @@ async fn main(spawner: Spawner) {
     );
     info!("LED controller initialised");
 
-    let mut display_backlight_controller =
-        PimoroniDisplayBacklightController::new(peripherals.PIN_20, peripherals.PWM_SLICE2);
-    info!("Display backlight controller initialised");
-
     let mut flash_controller: FlashController<'_, FLASH_STORAGE_OFFSET_BYTES> =
         FlashController::new(peripherals.FLASH, peripherals.DMA_CH1);
     info!("Flash controller initialised");
@@ -104,6 +99,8 @@ async fn main(spawner: Spawner) {
                         peripherals.PIN_17,
                         peripherals.PIN_18,
                         peripherals.PIN_19,
+                        peripherals.PIN_20,
+                        peripherals.PWM_SLICE2,
                         peripherals.SPI0,
                         peripherals.DMA_CH0,
                     ))
@@ -165,11 +162,7 @@ async fn main(spawner: Spawner) {
     state.lolly_weight_g = cfg.lolly_weight_g;
     state.tare_weight_g = cfg.tare_weight_g;
 
-    output_state(
-        &mut state,
-        &mut display_backlight_controller,
-        &mut display_led_controller,
-    );
+    output_state(&mut state, &mut display_led_controller);
 
     let rx = MESSAGE_CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
@@ -195,10 +188,6 @@ async fn main(spawner: Spawner) {
                 }
             }
         }
-        output_state(
-            &mut state,
-            &mut display_backlight_controller,
-            &mut display_led_controller,
-        );
+        output_state(&mut state, &mut display_led_controller);
     }
 }
