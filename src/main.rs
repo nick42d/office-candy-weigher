@@ -5,12 +5,14 @@ use crate::candy_weigher_ui::DisplayState;
 use crate::flash::{Config, FlashController};
 use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
 use crate::round_robin_select::PollFirst2;
-use crate::state::{output_state, State};
+use crate::state::effect::StateEffect;
+use crate::state::{output_state, DisplayBacklightState, State};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use defmt::*;
+use effect_light::Effect as _;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
 use embassy_rp::multicore::{spawn_core1, Stack};
@@ -28,11 +30,14 @@ pub const FLASH_STORAGE_OFFSET_BYTES: u32 = 2040 * 1024;
 // STORAGE in memory.x is 8KB.
 const FLASH_STORAGE_SIZE_BYTES: u32 = 8 * 1024;
 
-static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, Message, MESSAGE_CHANNEL_SIZE> = Channel::new();
+static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE> =
+    Channel::new();
+static HX710_CONTROL_SIGNAL: Signal<ThreadModeRawMutex, ()> = Signal::new();
 // Give core1 (second core) it's own stack.
 static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();
 static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
-static CORE1_SIGNAL: Signal<CriticalSectionRawMutex, DisplayState> = Signal::new();
+static CORE1_SIGNAL: Signal<CriticalSectionRawMutex, (DisplayState, DisplayBacklightState)> =
+    Signal::new();
 
 mod candy_weigher_ui;
 mod config_consts;
@@ -43,23 +48,6 @@ mod pimoroni_display_leds;
 mod round_robin_select;
 mod state;
 mod tasks;
-
-#[derive(Copy, Clone, Debug, defmt::Format)]
-enum Message {
-    ButtonAPressed,
-    ButtonBPressed,
-    ButtonAHeld,
-    ButtonBHeld,
-    ButtonAHoldCancelled,
-    ButtonBHoldCancelled,
-    ButtonXPressed,
-    ButtonYPressed,
-    ButtonXHeld,
-    ButtonYHeld,
-    ButtonXReleased,
-    ButtonYReleased,
-    WeightUpdate(f32),
-}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -183,7 +171,11 @@ async fn main(spawner: Spawner) {
         )
         .await;
         match result {
-            Either::First(message) => state.handle_message(&mut flash_controller, message),
+            Either::First(message) => {
+                if let Some(effect) = message.resolve(&mut state) {
+                    effect.resolve(&mut flash_controller)
+                }
+            }
             Either::Second(transitions) => {
                 debug!("State transitioning");
                 for transition in transitions {
@@ -192,5 +184,22 @@ async fn main(spawner: Spawner) {
             }
         }
         output_state(&mut state, &mut display_led_controller);
+    }
+}
+
+#[derive(Debug)]
+pub enum Effect {
+    WriteConfig(Config),
+    EnterCalibrationMode,
+}
+
+impl<'a> effect_light::Effect<&mut FlashController<'a>> for Effect {
+    type Output = ();
+    fn resolve(self, dependency: &mut FlashController) -> Self::Output {
+        let flash_controller = dependency;
+        match self {
+            Effect::WriteConfig(config) => flash_controller.write::<_, 4096>(&config),
+            Effect::EnterCalibrationMode => HX710_CONTROL_SIGNAL.signal(()),
+        }
     }
 }

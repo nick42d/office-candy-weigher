@@ -1,4 +1,8 @@
-use crate::{config_consts::DEFAULT_LOLLY_WEIGHT, state::round_f32, FLASH_STORAGE_OFFSET_BYTES};
+use crate::{
+    config_consts::{DEFAULT_LOLLY_WEIGHT, SCALE_RAW_1G_STEP, SCALE_RAW_TARE},
+    state::round_f32,
+    FLASH_STORAGE_OFFSET_BYTES,
+};
 use defmt::{error, info};
 use embassy_rp::{
     dma,
@@ -15,6 +19,7 @@ pub struct Config {
     pub tare_weight_dg: i32,
     pub lolly_weight_dg: i32,
     pub saved_tared_scale_weight: i32,
+    pub scale_50g_raw: i32,
 }
 
 impl Default for Config {
@@ -23,6 +28,7 @@ impl Default for Config {
             tare_weight_dg: Default::default(),
             lolly_weight_dg: round_f32(DEFAULT_LOLLY_WEIGHT * 10.0),
             saved_tared_scale_weight: Default::default(),
+            scale_50g_raw: round_f32((SCALE_RAW_1G_STEP * 50.0) + SCALE_RAW_TARE),
         }
     }
 }

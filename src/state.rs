@@ -7,11 +7,13 @@ use crate::{
     },
     flash::{Config, FlashController},
     pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
-    Message, CORE1_SIGNAL,
+    CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;
 use embassy_time::{Duration, Instant};
+
+pub mod effect;
 
 pub struct State {
     pub tare_weight_g: f32,
@@ -24,8 +26,17 @@ pub struct State {
     pub b_r_pressed: MomentaryButtonState,
     pub led_state: LedState,
     pub backlight_state: DisplayBacklightState,
+    pub last_backlight_state: Option<DisplayBacklightState>,
     pub last_display_state: Option<DisplayState>,
     pub last_led_state: Option<LedState>,
+    pub screen_shown: ScreenShown,
+}
+
+#[derive(Default, Eq, PartialEq, Copy, Clone)]
+pub enum ScreenShown {
+    #[default]
+    Main,
+    Calibration,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -168,7 +179,6 @@ impl Default for State {
             tare_weight_g: Default::default(),
             scale_weight_g: Default::default(),
             saved_tared_scale_weight_g: Default::default(),
-            lolly_weight_g: DEFAULT_LOLLY_WEIGHT,
             t_l_pressed: Default::default(),
             b_l_pressed: Default::default(),
             t_r_pressed: Default::default(),
@@ -176,44 +186,54 @@ impl Default for State {
             led_state: Default::default(),
             last_display_state: Default::default(),
             last_led_state: Default::default(),
+            last_backlight_state: Default::default(),
+            screen_shown: Default::default(),
             backlight_state: DisplayBacklightState::On {
                 on_at: Instant::now(),
             },
+            lolly_weight_g: DEFAULT_LOLLY_WEIGHT,
         }
     }
 }
 
 impl State {
     pub fn to_display_state(&self) -> DisplayState {
-        // Round off to 1 d.p (prevent overdrawing to display)
-        let tared_scale_weight_g =
-            round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
-        let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g)
-            .try_into()
-            .unwrap_or_default();
-        let prev_lolly_count = round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
-        DisplayState {
-            scale_weight_g: self.scale_weight_g - self.tare_weight_g,
-            lolly_weight_g: self.lolly_weight_g,
-            lolly_count,
-            lolly_count_change: lolly_count as i32 - prev_lolly_count,
-            t_l_pressed: matches!(
-                self.t_l_pressed,
-                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-            ),
-            t_r_pressed: matches!(
-                self.t_r_pressed,
-                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-            ),
-            b_l_pressed: matches!(
-                self.b_l_pressed,
-                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-            ),
-            b_r_pressed: matches!(
-                self.b_r_pressed,
-                MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-            ),
-            backlight_state: self.backlight_state,
+        match self.screen_shown {
+            ScreenShown::Main => {
+                // Round off to 1 d.p (prevent overdrawing to display)
+                let tared_scale_weight_g =
+                    round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
+                let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g)
+                    .try_into()
+                    .unwrap_or_default();
+                let prev_lolly_count =
+                    round_f32(self.saved_tared_scale_weight_g / self.lolly_weight_g);
+                DisplayState::MainScreen {
+                    scale_weight_g: self.scale_weight_g - self.tare_weight_g,
+                    lolly_weight_g: self.lolly_weight_g,
+                    lolly_count,
+                    lolly_count_change: lolly_count as i32 - prev_lolly_count,
+                    t_l_pressed: matches!(
+                        self.t_l_pressed,
+                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
+                    ),
+                    t_r_pressed: matches!(
+                        self.t_r_pressed,
+                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
+                    ),
+                    b_l_pressed: matches!(
+                        self.b_l_pressed,
+                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
+                    ),
+                    b_r_pressed: matches!(
+                        self.b_r_pressed,
+                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
+                    ),
+                }
+            }
+            ScreenShown::Calibration => DisplayState::CalibrationScreen {
+                calibration_value: core::todo!(),
+            },
         }
     }
     pub fn get_next_transitions(
@@ -296,114 +316,6 @@ impl State {
         ]
         .into_iter()
     }
-    pub fn handle_message(&mut self, flash_controller: &mut FlashController<'_>, message: Message) {
-        debug!("About to handle message: {}", message);
-        match message {
-            Message::ButtonAHeld => {
-                self.t_l_pressed = MomentaryButtonState::Held;
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonBHeld => {
-                self.b_l_pressed = MomentaryButtonState::Held;
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonAHoldCancelled => {
-                self.t_l_pressed = MomentaryButtonState::Off;
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonBHoldCancelled => {
-                self.b_l_pressed = MomentaryButtonState::Off;
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonAPressed => {
-                self.lolly_weight_g += 0.1;
-                if matches!(self.t_l_pressed, MomentaryButtonState::Off) {
-                    self.t_l_pressed = MomentaryButtonState::PressedRecently {
-                        on_at: Instant::now(),
-                    };
-                }
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonBPressed => {
-                self.lolly_weight_g -= 0.1;
-                if matches!(self.b_l_pressed, MomentaryButtonState::Off) {
-                    self.b_l_pressed = MomentaryButtonState::PressedRecently {
-                        on_at: Instant::now(),
-                    };
-                }
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonXPressed => {
-                self.saved_tared_scale_weight_g = self.scale_weight_g - self.tare_weight_g;
-                self.t_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonYPressed => {
-                self.tare_weight_g = self.scale_weight_g;
-                self.b_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-                self.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            Message::ButtonXHeld => flash_controller.write::<_, 4096>(&Config {
-                tare_weight_dg: round_f32(self.tare_weight_g * 10.0),
-                lolly_weight_dg: round_f32(self.lolly_weight_g * 10.0),
-                saved_tared_scale_weight: round_f32(self.saved_tared_scale_weight_g * 10.0),
-            }),
-            Message::ButtonYHeld => (),
-            Message::ButtonXReleased => (),
-            Message::ButtonYReleased => (),
-            Message::WeightUpdate(w) => {
-                let prev_tared_scale_weight_g =
-                    round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
-                let prev_lolly_count = round_f32(prev_tared_scale_weight_g / self.lolly_weight_g);
-
-                self.scale_weight_g = w;
-                let tared_scale_weight_g =
-                    round_f32((self.scale_weight_g - self.tare_weight_g).mul(10.0)) as f32 / 10.0;
-                let lolly_count = round_f32(tared_scale_weight_g / self.lolly_weight_g);
-
-                if lolly_count < prev_lolly_count {
-                    self.led_state = LedState::Red {
-                        total_steps: TOTAL_LED_FADEOUT_STEPS,
-                        current_step: 0,
-                        current_step_at: Instant::now(),
-                    };
-                    self.backlight_state = DisplayBacklightState::On {
-                        on_at: Instant::now(),
-                    };
-                }
-                if lolly_count > prev_lolly_count {
-                    self.led_state = LedState::Blue {
-                        total_steps: TOTAL_LED_FADEOUT_STEPS,
-                        current_step: 0,
-                        current_step_at: Instant::now(),
-                    };
-                    self.backlight_state = DisplayBacklightState::On {
-                        on_at: Instant::now(),
-                    };
-                }
-            }
-        }
-    }
 }
 
 pub fn output_state(
@@ -438,9 +350,12 @@ pub fn output_state(
         state.last_led_state = Some(state.led_state);
     }
     let next_display_state = state.to_display_state();
-    if state.last_display_state.as_ref() != Some(&next_display_state) {
-        CORE1_SIGNAL.signal(next_display_state.clone());
+    if state.last_display_state.as_ref() != Some(&next_display_state)
+        || state.last_backlight_state.as_ref() != Some(&state.backlight_state)
+    {
+        CORE1_SIGNAL.signal((next_display_state.clone(), state.backlight_state));
         state.last_display_state = Some(next_display_state);
+        state.last_backlight_state = Some(state.backlight_state);
     }
 }
 

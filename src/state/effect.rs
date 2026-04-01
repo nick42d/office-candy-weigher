@@ -1,0 +1,150 @@
+use core::ops::Mul;
+
+use crate::{
+    config_consts::TOTAL_LED_FADEOUT_STEPS,
+    flash::Config,
+    state::{round_f32, DisplayBacklightState, LedState, MomentaryButtonState, ScreenShown, State},
+};
+use defmt::debug;
+use effect_light::Effect;
+use embassy_time::Instant;
+
+#[derive(Copy, Clone, Debug, defmt::Format)]
+pub enum StateEffect {
+    ButtonAPressed,
+    ButtonBPressed,
+    ButtonAHeld,
+    ButtonBHeld,
+    ButtonAHoldCancelled,
+    ButtonBHoldCancelled,
+    ButtonXPressed,
+    ButtonYPressed,
+    ButtonXHeld,
+    ButtonYHeld,
+    ButtonXReleased,
+    ButtonYReleased,
+    WeightUpdate(f32),
+    CalibWeightUpdate(i32),
+    CalibModeComplete,
+}
+
+impl Effect<&mut State> for StateEffect {
+    type Output = Option<crate::Effect>;
+    fn resolve(self, state: &mut State) -> Self::Output {
+        debug!("About to handle message: {}", self);
+        match self {
+            StateEffect::ButtonAHeld => {
+                state.t_l_pressed = MomentaryButtonState::Held;
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonBHeld => {
+                state.b_l_pressed = MomentaryButtonState::Held;
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonAHoldCancelled => {
+                state.t_l_pressed = MomentaryButtonState::Off;
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonBHoldCancelled => {
+                state.b_l_pressed = MomentaryButtonState::Off;
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonAPressed => {
+                state.lolly_weight_g += 0.1;
+                if matches!(state.t_l_pressed, MomentaryButtonState::Off) {
+                    state.t_l_pressed = MomentaryButtonState::PressedRecently {
+                        on_at: Instant::now(),
+                    };
+                }
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonBPressed => {
+                state.lolly_weight_g -= 0.1;
+                if matches!(state.b_l_pressed, MomentaryButtonState::Off) {
+                    state.b_l_pressed = MomentaryButtonState::PressedRecently {
+                        on_at: Instant::now(),
+                    };
+                }
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonXPressed => {
+                state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
+                state.t_r_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonYPressed => {
+                state.tare_weight_g = state.scale_weight_g;
+                state.b_r_pressed = MomentaryButtonState::PressedRecently {
+                    on_at: Instant::now(),
+                };
+                state.backlight_state = DisplayBacklightState::On {
+                    on_at: Instant::now(),
+                };
+            }
+            StateEffect::ButtonXHeld => {
+                return Some(crate::Effect::WriteConfig(Config {
+                    tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
+                    lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),
+                    saved_tared_scale_weight: round_f32(state.saved_tared_scale_weight_g * 10.0),
+                    scale_50g_raw: todo!(),
+                }));
+            }
+            StateEffect::ButtonYHeld => {
+                state.screen_shown = ScreenShown::Calibration;
+                return Some(crate::Effect::EnterCalibrationMode);
+            }
+            StateEffect::ButtonXReleased => (),
+            StateEffect::ButtonYReleased => (),
+            StateEffect::WeightUpdate(w) => {
+                let prev_tared_scale_weight_g =
+                    round_f32((state.scale_weight_g - state.tare_weight_g).mul(10.0)) as f32 / 10.0;
+                let prev_lolly_count = round_f32(prev_tared_scale_weight_g / state.lolly_weight_g);
+
+                state.scale_weight_g = w;
+                let tared_scale_weight_g =
+                    round_f32((state.scale_weight_g - state.tare_weight_g).mul(10.0)) as f32 / 10.0;
+                let lolly_count = round_f32(tared_scale_weight_g / state.lolly_weight_g);
+
+                if lolly_count < prev_lolly_count {
+                    state.led_state = LedState::Red {
+                        total_steps: TOTAL_LED_FADEOUT_STEPS,
+                        current_step: 0,
+                        current_step_at: Instant::now(),
+                    };
+                    state.backlight_state = DisplayBacklightState::On {
+                        on_at: Instant::now(),
+                    };
+                }
+                if lolly_count > prev_lolly_count {
+                    state.led_state = LedState::Blue {
+                        total_steps: TOTAL_LED_FADEOUT_STEPS,
+                        current_step: 0,
+                        current_step_at: Instant::now(),
+                    };
+                    state.backlight_state = DisplayBacklightState::On {
+                        on_at: Instant::now(),
+                    };
+                }
+            }
+            StateEffect::CalibWeightUpdate(_) => todo!(),
+            StateEffect::CalibModeComplete => state.screen_shown = ScreenShown::Main,
+        };
+        None
+    }
+}

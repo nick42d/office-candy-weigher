@@ -347,6 +347,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "effect-light"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63e9643cdc303c2f1da36a577a91a90ea6736a83f2280e36a2ccef675092bff"
+
+[[package]]
 name = "eg-seven-segment"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -978,6 +984,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "display-interface-spi",
+ "effect-light",
  "eg-seven-segment",
  "embassy-embedded-hal",
  "embassy-executor",

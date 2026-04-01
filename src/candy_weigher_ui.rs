@@ -10,20 +10,88 @@ use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
 
 #[derive(PartialEq, Clone)]
-pub struct DisplayState {
-    pub scale_weight_g: f32,
-    pub lolly_weight_g: f32,
-    pub lolly_count: u32,
-    pub lolly_count_change: i32,
-    pub t_l_pressed: bool,
-    pub b_l_pressed: bool,
-    pub t_r_pressed: bool,
-    pub b_r_pressed: bool,
-    pub backlight_state: DisplayBacklightState,
+pub enum DisplayState {
+    MainScreen {
+        scale_weight_g: f32,
+        lolly_weight_g: f32,
+        lolly_count: u32,
+        lolly_count_change: i32,
+        t_l_pressed: bool,
+        b_l_pressed: bool,
+        t_r_pressed: bool,
+        b_r_pressed: bool,
+    },
+    CalibrationScreen {
+        calibration_value: i32,
+    },
 }
 
 pub fn draw<D>(state: &DisplayState, display: &mut D)
 where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    match *state {
+        DisplayState::MainScreen {
+            scale_weight_g,
+            lolly_weight_g,
+            lolly_count,
+            lolly_count_change,
+            t_l_pressed,
+            b_l_pressed,
+            t_r_pressed,
+            b_r_pressed,
+        } => draw_main_screen(
+            scale_weight_g,
+            lolly_weight_g,
+            lolly_count,
+            lolly_count_change,
+            t_l_pressed,
+            b_l_pressed,
+            t_r_pressed,
+            b_r_pressed,
+            display,
+        ),
+        DisplayState::CalibrationScreen { calibration_value } => {
+            draw_calibration_screen(calibration_value, display)
+        }
+    }
+}
+
+pub fn draw_calibration_screen<D>(calibration_value: i32, display: &mut D)
+where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    // Max value is 2_147_483_647 (10 digits), add extra char for minus sign.
+    let mut calibration_value_str = heapless::String::<11>::new();
+    core::write!(&mut calibration_value_str, "{}", calibration_value).unwrap();
+    let text_calibration_value = Text::new(
+        &calibration_value_str,
+        Point::new(10, 90),
+        eg_seven_segment::SevenSegmentStyleBuilder::new()
+            .digit_size(Size {
+                width: 30,
+                height: 50,
+            })
+            .segment_color(Rgb565::GREEN)
+            .build(),
+    );
+    display.clear(Rgb565::BLACK).unwrap();
+    text_calibration_value.draw(display).unwrap();
+}
+
+pub fn draw_main_screen<D>(
+    scale_weight_g: f32,
+    lolly_weight_g: f32,
+    lolly_count: u32,
+    lolly_count_change: i32,
+    t_l_pressed: bool,
+    b_l_pressed: bool,
+    t_r_pressed: bool,
+    b_r_pressed: bool,
+    display: &mut D,
+) where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
@@ -104,23 +172,13 @@ where
     let mut lolly_weight_str = heapless::String::<30>::new();
     let mut lolly_count_str = heapless::String::<10>::new();
     let mut lolly_count_change_str = heapless::String::<30>::new();
-    core::write!(
-        &mut scale_weight_str,
-        "W-Scale: {:.1}g",
-        state.scale_weight_g
-    )
-    .unwrap();
-    core::write!(
-        &mut lolly_weight_str,
-        "W-Lolly: {:.1}g",
-        state.lolly_weight_g
-    )
-    .unwrap();
-    core::write!(&mut lolly_count_str, "{}", state.lolly_count).unwrap();
-    if state.lolly_count_change >= 0 {
-        core::write!(&mut lolly_count_change_str, "+{}", state.lolly_count_change)
+    core::write!(&mut scale_weight_str, "W-Scale: {:.1}g", scale_weight_g).unwrap();
+    core::write!(&mut lolly_weight_str, "W-Lolly: {:.1}g", lolly_weight_g).unwrap();
+    core::write!(&mut lolly_count_str, "{}", lolly_count).unwrap();
+    if lolly_count_change >= 0 {
+        core::write!(&mut lolly_count_change_str, "+{}", lolly_count_change)
     } else {
-        core::write!(&mut lolly_count_change_str, "{}", state.lolly_count_change)
+        core::write!(&mut lolly_count_change_str, "{}", lolly_count_change)
     }
     .unwrap();
     let text_scale_weight = Text::new(&scale_weight_str, Point::new(40, 22), weight_text_style);
@@ -148,22 +206,22 @@ where
 
     display.clear(Rgb565::BLACK).unwrap();
 
-    if state.t_l_pressed {
+    if t_l_pressed {
         circle_t_l.draw(display).unwrap();
     } else {
         arc_t_l.draw(display).unwrap();
     };
-    if state.t_r_pressed {
+    if t_r_pressed {
         circle_t_r.draw(display).unwrap();
     } else {
         arc_t_r.draw(display).unwrap();
     };
-    if state.b_l_pressed {
+    if b_l_pressed {
         circle_b_l.draw(display).unwrap();
     } else {
         arc_b_l.draw(display).unwrap();
     };
-    if state.b_r_pressed {
+    if b_r_pressed {
         circle_b_r.draw(display).unwrap();
     } else {
         arc_b_r.draw(display).unwrap();
