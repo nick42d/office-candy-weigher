@@ -1,8 +1,8 @@
 use crate::{
     candy_weigher_ui::DisplayState,
     config_consts::{
-        DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
-        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
+        DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME,
+        MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
     },
     hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     CORE1_SIGNAL,
@@ -370,4 +370,13 @@ pub const fn round_f32(x: f32) -> i32 {
     } else {
         (x - 0.5) as i32
     }
+}
+
+/// Round f32 to x decimal places.
+pub const fn round_f32_dp(x: f32, dp: u8) -> f32 {
+    if dp == 0 {
+        return round_f32(x) as f32;
+    }
+    let factor = 10u32.pow(dp as u32) as f32;
+    round_f32(x * factor) as f32 / factor
 }

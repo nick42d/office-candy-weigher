@@ -248,7 +248,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
 pub struct ScaleRawWeight(f32);
 impl ScaleRawWeight {
     pub const fn to_grams(self, scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
-        (self.0 - scale_raw_tare as f32) / scale_raw_1g_step(scale_raw_tare, scale_raw_50g)
+        (self.0 - scale_raw_tare) / scale_raw_1g_step(scale_raw_tare, scale_raw_50g)
     }
     pub const fn get_raw(self) -> f32 {
         self.0
@@ -271,6 +271,8 @@ pub async fn hx710_load_cell_manager(
 
     // Exponential moving average - to smooth readings.
     const EMA_FILTER_ALPHA: f32 = 0.2;
+    // Minimum change of value to be sent.
+    const MIN_RAW_CHANGE_TOLERANCE: f32 = 10.0;
     let mut ema_weight_raw: Option<f32> = None;
 
     loop {
@@ -299,7 +301,7 @@ pub async fn hx710_load_cell_manager(
         if let Some(ref mut ema_weight_raw) = ema_weight_raw {
             let next_ema_weight_raw =
                 (raw_val as f32 * EMA_FILTER_ALPHA) + (*ema_weight_raw * (1.0 - EMA_FILTER_ALPHA));
-            if (next_ema_weight_raw - *ema_weight_raw).abs() > 0.1 {
+            if (next_ema_weight_raw - *ema_weight_raw).abs() > MIN_RAW_CHANGE_TOLERANCE {
                 tx.send(StateEffect::WeightUpdate(ScaleRawWeight(
                     next_ema_weight_raw,
                 )))
