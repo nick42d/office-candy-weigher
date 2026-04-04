@@ -12,10 +12,15 @@ use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use defmt::*;
-use effect_light::Effect as _;
+use effect_light::{Effect as _, EffectExt};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
+use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::multicore::{spawn_core1, Stack};
+use embassy_rp::peripherals::PIO1;
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1};
+use embassy_rp::pio;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
@@ -39,10 +44,22 @@ static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 static CORE1_SIGNAL: Signal<CriticalSectionRawMutex, (DisplayState, DisplayBacklightState)> =
     Signal::new();
 
+#[cfg(feature = "hardware-sim")]
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
+    PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+});
+
+#[cfg(not(feature = "hardware-sim"))]
+bind_interrupts!(struct Irqs {
+    PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+});
+
 mod candy_weigher_ui;
 mod config_consts;
 mod flash;
-mod hx710;
 mod pimoroni_display;
 mod pimoroni_display_leds;
 mod round_robin_select;
@@ -83,8 +100,8 @@ async fn main(spawner: Spawner) {
         move || {
             let core1_executor = CORE1_EXECUTOR.init(Executor::new());
             core1_executor.run(|spawner| {
-                spawner
-                    .spawn(display_manager(
+                spawner.spawn(
+                    display_manager(
                         peripherals.PIN_16,
                         peripherals.PIN_17,
                         peripherals.PIN_18,
@@ -93,65 +110,54 @@ async fn main(spawner: Spawner) {
                         peripherals.PWM_SLICE2,
                         peripherals.SPI0,
                         peripherals.DMA_CH0,
-                    ))
-                    .unwrap();
+                    )
+                    .unwrap(),
+                );
                 info!("Core1 tasks spawned");
             });
         },
     );
-    spawner
-        .spawn(pico_display_button_a_manager(
-            peripherals.PIN_12,
-            MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
-    spawner
-        .spawn(pico_display_button_b_manager(
-            peripherals.PIN_13,
-            MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
-    spawner
-        .spawn(pico_display_button_x_manager(
-            peripherals.PIN_14,
-            MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
-    spawner
-        .spawn(pico_display_button_y_manager(
-            peripherals.PIN_15,
-            MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
-    spawner
-        .spawn(hx710_load_cell_manager(
+    spawner.spawn(
+        pico_display_button_a_manager(peripherals.PIN_12, MESSAGE_CHANNEL.sender()).unwrap(),
+    );
+    spawner.spawn(
+        pico_display_button_b_manager(peripherals.PIN_13, MESSAGE_CHANNEL.sender()).unwrap(),
+    );
+    spawner.spawn(
+        pico_display_button_x_manager(peripherals.PIN_14, MESSAGE_CHANNEL.sender()).unwrap(),
+    );
+    spawner.spawn(
+        pico_display_button_y_manager(peripherals.PIN_15, MESSAGE_CHANNEL.sender()).unwrap(),
+    );
+    spawner.spawn(
+        hx710_load_cell_manager(
             peripherals.PIN_10,
             peripherals.PIN_11,
             peripherals.PIO1,
             MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
+        )
+        .unwrap(),
+    );
     #[cfg(feature = "hardware-sim")]
-    spawner
-        .spawn(tasks::hx710_load_cell_manager_rotary_encoder(
+    spawner.spawn(
+        tasks::hx710_load_cell_manager_rotary_encoder(
             peripherals.PIN_26,
             peripherals.PIN_27,
             peripherals.PIO0,
             MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
+        )
+        .unwrap(),
+    );
     #[cfg(feature = "software-sim")]
-    spawner
-        .spawn(tasks::hx710_load_cell_manager_simulated(
-            MESSAGE_CHANNEL.sender(),
-        ))
-        .unwrap();
+    spawner.spawn(tasks::hx710_load_cell_manager_simulated(MESSAGE_CHANNEL.sender()).unwrap());
     info!("Core0 tasks spawned");
 
-    let mut state = State::default();
-    state.lolly_weight_g = (cfg.lolly_weight_dg as f32) / 10.0;
-    state.tare_weight_g = (cfg.tare_weight_dg as f32) / 10.0;
-    state.saved_tared_scale_weight_g = (cfg.saved_tared_scale_weight as f32) / 10.0;
+    let mut state = State {
+        lolly_weight_g: (cfg.lolly_weight_dg as f32) / 10.0,
+        tare_weight_g: (cfg.tare_weight_dg as f32) / 10.0,
+        saved_tared_scale_weight_g: (cfg.saved_tared_scale_weight as f32) / 10.0,
+        ..Default::default()
+    };
 
     output_state(&mut state, &mut display_led_controller);
 
@@ -172,9 +178,9 @@ async fn main(spawner: Spawner) {
         .await;
         match result {
             Either::First(message) => {
-                if let Some(effect) = message.resolve(&mut state) {
-                    effect.resolve(&mut flash_controller)
-                }
+                let _: Option<()> = message
+                    .flatten_option()
+                    .resolve((&mut state, &mut flash_controller));
             }
             Either::Second(transitions) => {
                 debug!("State transitioning");

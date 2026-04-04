@@ -1,13 +1,13 @@
 use crate::{
     config_consts::{DEFAULT_LOLLY_WEIGHT, SCALE_RAW_1G_STEP, SCALE_RAW_TARE},
     state::round_f32,
-    FLASH_STORAGE_OFFSET_BYTES,
+    Irqs, FLASH_STORAGE_OFFSET_BYTES,
 };
 use defmt::{error, info};
 use embassy_rp::{
     dma,
     flash::{Async, Flash, ERASE_SIZE, PAGE_SIZE, READ_SIZE, WRITE_SIZE},
-    peripherals::{self, FLASH},
+    peripherals::{self, DMA_CH0, DMA_CH1, FLASH},
     Peri,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -38,10 +38,12 @@ pub struct FlashController<'a> {
     offset: u32,
 }
 impl<'a> FlashController<'a> {
-    pub fn new(flash: Peri<'a, FLASH>, dma: Peri<'a, impl dma::Channel>, offset: u32) -> Self {
-        let flash = Flash::new(flash, dma);
+    pub fn new(flash: Peri<'a, FLASH>, dma: Peri<'a, DMA_CH1>, offset: u32) -> Self {
+        let flash = Flash::new(flash, dma, Irqs);
         Self { flash, offset }
     }
+    /// Warning - this could return random noise, provided it deserialised into
+    /// a T.
     pub async fn read<T: DeserializeOwned, const SIZE_BYTES: usize>(
         &mut self,
     ) -> postcard::Result<T> {
