@@ -6,7 +6,7 @@ use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
-use embedded_graphics::{prelude::*, text};
+use embedded_graphics::prelude::*;
 
 #[derive(PartialEq, Clone)]
 pub enum DisplayState {

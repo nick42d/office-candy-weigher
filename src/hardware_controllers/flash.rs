@@ -1,13 +1,12 @@
 use crate::{
     config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
     state::round_f32,
-    Irqs, FLASH_STORAGE_OFFSET_BYTES,
+    Irqs,
 };
 use defmt::{error, info};
 use embassy_rp::{
-    dma,
-    flash::{Async, Flash, ERASE_SIZE, PAGE_SIZE, READ_SIZE, WRITE_SIZE},
-    peripherals::{self, DMA_CH0, DMA_CH1, FLASH},
+    flash::{Async, Flash, ERASE_SIZE, PAGE_SIZE, READ_SIZE},
+    peripherals::{DMA_CH1, FLASH},
     Peri,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};

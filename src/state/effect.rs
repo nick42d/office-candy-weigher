@@ -1,7 +1,7 @@
 use core::ops::Mul;
 
 use crate::{
-    config_consts::{self, TOTAL_LED_FADEOUT_STEPS},
+    config_consts::TOTAL_LED_FADEOUT_STEPS,
     hardware_controllers::flash::Config,
     state::{round_f32, DisplayBacklightState, LedState, MomentaryButtonState, ScreenShown, State},
     tasks::ScaleRawWeight,

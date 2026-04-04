@@ -1,19 +1,14 @@
 use crate::{
     candy_weigher_ui::DisplayState,
     config_consts::{
-        DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE,
-        LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
-        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW, TOTAL_LED_FADEOUT_STEPS,
+        DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
+        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
     },
-    hardware_controllers::{
-        flash::{Config, FlashController},
-        pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
-    },
+    hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;
-use embassy_rp::pio::StatusSource;
 use embassy_time::{Duration, Instant};
 
 pub mod effect;
