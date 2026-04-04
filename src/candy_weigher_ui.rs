@@ -1,13 +1,12 @@
 use crate::config_consts::{BUTTON_SEMICIRCLE_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER};
-use crate::pimoroni_display::{DISPLAY_H, DISPLAY_W};
-use crate::state::DisplayBacklightState;
+use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
 use core::fmt::Write;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
+use embedded_graphics::{prelude::*, text};
 
 #[derive(PartialEq, Clone)]
 pub enum DisplayState {
@@ -22,7 +21,7 @@ pub enum DisplayState {
         b_r_pressed: bool,
     },
     CalibrationScreen {
-        calibration_value: i32,
+        calibration_value: Option<f32>,
     },
 }
 
@@ -58,27 +57,39 @@ where
     }
 }
 
-pub fn draw_calibration_screen<D>(calibration_value: i32, display: &mut D)
+pub fn draw_calibration_screen<D>(calibration_value: Option<f32>, display: &mut D)
 where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
-    // Max value is 2_147_483_647 (10 digits), add extra char for minus sign.
-    let mut calibration_value_str = heapless::String::<11>::new();
-    core::write!(&mut calibration_value_str, "{}", calibration_value).unwrap();
-    let text_calibration_value = Text::new(
-        &calibration_value_str,
-        Point::new(10, 90),
-        eg_seven_segment::SevenSegmentStyleBuilder::new()
-            .digit_size(Size {
-                width: 30,
-                height: 50,
-            })
-            .segment_color(Rgb565::GREEN)
-            .build(),
-    );
     display.clear(Rgb565::BLACK).unwrap();
-    text_calibration_value.draw(display).unwrap();
+    if let Some(calibration_value) = calibration_value {
+        // Max value is 2_147_483_647 (10 digits), add extra char for minus sign.
+        let mut calibration_value_str = heapless::String::<11>::new();
+        core::write!(&mut calibration_value_str, "{}", calibration_value as i32).unwrap();
+        let text_calibration_value = Text::new(
+            &calibration_value_str,
+            Point::new(10, 90),
+            eg_seven_segment::SevenSegmentStyleBuilder::new()
+                .digit_size(Size {
+                    width: 30,
+                    height: 50,
+                })
+                .segment_color(Rgb565::GREEN)
+                .build(),
+        );
+        text_calibration_value.draw(display).unwrap();
+    } else {
+        let text_calibration_value = Text::new(
+            "Calibrating...",
+            Point::new(10, 90),
+            embedded_graphics::mono_font::MonoTextStyleBuilder::new()
+                .text_color(Rgb565::GREEN)
+                .font(&FONT_10X20)
+                .build(),
+        );
+        text_calibration_value.draw(display).unwrap();
+    }
 }
 
 pub fn draw_main_screen<D>(

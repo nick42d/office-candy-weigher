@@ -2,8 +2,9 @@
 #![no_main]
 
 use crate::candy_weigher_ui::DisplayState;
-use crate::flash::{Config, FlashController};
-use crate::pimoroni_display_leds::PimoroniDisplayRgbLedController;
+use crate::hardware_controllers::{
+    flash::Config, FlashController, HX710Controller, PimoroniDisplayRgbLedController,
+};
 use crate::round_robin_select::PollFirst2;
 use crate::state::effect::StateEffect;
 use crate::state::{output_state, DisplayBacklightState, State};
@@ -37,7 +38,6 @@ const FLASH_STORAGE_SIZE_BYTES: u32 = 8 * 1024;
 
 static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE> =
     Channel::new();
-static HX710_CONTROL_SIGNAL: Signal<ThreadModeRawMutex, ()> = Signal::new();
 // Give core1 (second core) it's own stack.
 static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();
 static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
@@ -59,9 +59,7 @@ bind_interrupts!(struct Irqs {
 
 mod candy_weigher_ui;
 mod config_consts;
-mod flash;
-mod pimoroni_display;
-mod pimoroni_display_leds;
+mod hardware_controllers;
 mod round_robin_select;
 mod state;
 mod tasks;
@@ -86,6 +84,8 @@ async fn main(spawner: Spawner) {
         FLASH_STORAGE_OFFSET_BYTES,
     );
     info!("Flash controller initialised");
+
+    let hx710_controller = HX710Controller;
 
     let cfg: Config = flash_controller
         .read::<_, 256>()
@@ -135,6 +135,7 @@ async fn main(spawner: Spawner) {
             peripherals.PIN_11,
             peripherals.PIO1,
             MESSAGE_CHANNEL.sender(),
+            hx710_controller.get_signal(),
         )
         .unwrap(),
     );
@@ -156,6 +157,8 @@ async fn main(spawner: Spawner) {
         lolly_weight_g: (cfg.lolly_weight_dg as f32) / 10.0,
         tare_weight_g: (cfg.tare_weight_dg as f32) / 10.0,
         saved_tared_scale_weight_g: (cfg.saved_tared_scale_weight as f32) / 10.0,
+        scale_raw_tare: cfg.scale_raw_tare,
+        scale_raw_50g: cfg.scale_raw_50g,
         ..Default::default()
     };
 
@@ -180,7 +183,8 @@ async fn main(spawner: Spawner) {
             Either::First(message) => {
                 let _: Option<()> = message
                     .flatten_option()
-                    .resolve((&mut state, &mut flash_controller));
+                    .provide_left(&mut state)
+                    .resolve((&mut flash_controller, &hx710_controller));
             }
             Either::Second(transitions) => {
                 debug!("State transitioning");
@@ -199,13 +203,13 @@ pub enum Effect {
     EnterCalibrationMode,
 }
 
-impl<'a> effect_light::Effect<&mut FlashController<'a>> for Effect {
+impl<'a> effect_light::Effect<(&mut FlashController<'a>, &HX710Controller)> for Effect {
     type Output = ();
-    fn resolve(self, dependency: &mut FlashController) -> Self::Output {
-        let flash_controller = dependency;
+    fn resolve(self, dependency: (&mut FlashController<'a>, &HX710Controller)) -> Self::Output {
+        let (flash_controller, hx710_controller) = dependency;
         match self {
             Effect::WriteConfig(config) => flash_controller.write::<_, 4096>(&config),
-            Effect::EnterCalibrationMode => HX710_CONTROL_SIGNAL.signal(()),
+            Effect::EnterCalibrationMode => hx710_controller.enter_calibration_mode(),
         }
     }
 }

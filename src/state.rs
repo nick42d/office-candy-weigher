@@ -1,16 +1,19 @@
 use crate::{
     candy_weigher_ui::DisplayState,
     config_consts::{
-        DEFAULT_LOLLY_WEIGHT, LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME,
-        MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
-        TOTAL_LED_FADEOUT_STEPS,
+        DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE,
+        LOW_BACKLIGHT_PERCENTAGE, MAX_LED_ON_TIME, MAX_MOMENTARY_BUTTON_ON_TIME,
+        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW, TOTAL_LED_FADEOUT_STEPS,
     },
-    flash::{Config, FlashController},
-    pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    hardware_controllers::{
+        flash::{Config, FlashController},
+        pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    },
     CORE1_SIGNAL,
 };
 use core::ops::Mul;
 use defmt::debug;
+use embassy_rp::pio::StatusSource;
 use embassy_time::{Duration, Instant};
 
 pub mod effect;
@@ -20,6 +23,9 @@ pub struct State {
     pub scale_weight_g: f32,
     pub saved_tared_scale_weight_g: f32,
     pub lolly_weight_g: f32,
+    pub displayed_calibration_value_raw: Option<f32>,
+    pub scale_raw_tare: f32,
+    pub scale_raw_50g: f32,
     pub t_l_pressed: MomentaryButtonState,
     pub b_l_pressed: MomentaryButtonState,
     pub t_r_pressed: MomentaryButtonState,
@@ -188,10 +194,13 @@ impl Default for State {
             last_led_state: Default::default(),
             last_backlight_state: Default::default(),
             screen_shown: Default::default(),
+            displayed_calibration_value_raw: Default::default(),
             backlight_state: DisplayBacklightState::On {
                 on_at: Instant::now(),
             },
             lolly_weight_g: DEFAULT_LOLLY_WEIGHT,
+            scale_raw_tare: DEFAULT_SCALE_RAW_TARE,
+            scale_raw_50g: DEFAULT_SCALE_RAW_50G,
         }
     }
 }
@@ -232,7 +241,7 @@ impl State {
                 }
             }
             ScreenShown::Calibration => DisplayState::CalibrationScreen {
-                calibration_value: core::todo!(),
+                calibration_value: self.displayed_calibration_value_raw,
             },
         }
     }
@@ -360,7 +369,7 @@ pub fn output_state(
 }
 
 /// Implementation of f32::round in no_std environment.
-pub fn round_f32(x: f32) -> i32 {
+pub const fn round_f32(x: f32) -> i32 {
     if x >= 0.0 {
         (x + 0.5) as i32
     } else {

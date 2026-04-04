@@ -1,9 +1,10 @@
 use core::ops::Mul;
 
 use crate::{
-    config_consts::TOTAL_LED_FADEOUT_STEPS,
-    flash::Config,
+    config_consts::{self, TOTAL_LED_FADEOUT_STEPS},
+    hardware_controllers::flash::Config,
     state::{round_f32, DisplayBacklightState, LedState, MomentaryButtonState, ScreenShown, State},
+    tasks::ScaleRawWeight,
 };
 use defmt::debug;
 use effect_light::Effect;
@@ -23,8 +24,8 @@ pub enum StateEffect {
     ButtonYHeld,
     ButtonXReleased,
     ButtonYReleased,
-    WeightUpdate(f32),
-    CalibWeightUpdate(i32),
+    WeightUpdate(ScaleRawWeight),
+    CalibWeightUpdate(ScaleRawWeight),
     CalibModeComplete,
 }
 
@@ -102,7 +103,8 @@ impl Effect<&mut State> for StateEffect {
                     tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
                     lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),
                     saved_tared_scale_weight: round_f32(state.saved_tared_scale_weight_g * 10.0),
-                    scale_50g_raw: todo!(),
+                    scale_raw_50g: state.scale_raw_tare,
+                    scale_raw_tare: state.scale_raw_50g,
                 }));
             }
             StateEffect::ButtonYHeld => {
@@ -116,7 +118,7 @@ impl Effect<&mut State> for StateEffect {
                     round_f32((state.scale_weight_g - state.tare_weight_g).mul(10.0)) as f32 / 10.0;
                 let prev_lolly_count = round_f32(prev_tared_scale_weight_g / state.lolly_weight_g);
 
-                state.scale_weight_g = w;
+                state.scale_weight_g = w.to_grams(state.scale_raw_tare, state.scale_raw_50g);
                 let tared_scale_weight_g =
                     round_f32((state.scale_weight_g - state.tare_weight_g).mul(10.0)) as f32 / 10.0;
                 let lolly_count = round_f32(tared_scale_weight_g / state.lolly_weight_g);
@@ -142,8 +144,13 @@ impl Effect<&mut State> for StateEffect {
                     };
                 }
             }
-            StateEffect::CalibWeightUpdate(_) => todo!(),
-            StateEffect::CalibModeComplete => state.screen_shown = ScreenShown::Main,
+            StateEffect::CalibWeightUpdate(w) => {
+                state.displayed_calibration_value_raw = Some(w.get_raw());
+            }
+            StateEffect::CalibModeComplete => {
+                state.displayed_calibration_value_raw = None;
+                state.screen_shown = ScreenShown::Main;
+            }
         };
         None
     }

@@ -1,11 +1,9 @@
 use core::cell::RefCell;
 
-use crate::config_consts::{LOW_BACKLIGHT_PERCENTAGE, SCALE_RAW_1G_STEP, SCALE_RAW_TARE};
-use crate::pimoroni_display::PimoroniDisplayController;
-use crate::pimoroni_display_leds::Percentage;
-use crate::{
-    candy_weigher_ui, Irqs, StateEffect, CORE1_SIGNAL, HX710_CONTROL_SIGNAL, MESSAGE_CHANNEL_SIZE,
-};
+use crate::config_consts::{scale_raw_1g_step, LOW_BACKLIGHT_PERCENTAGE};
+use crate::hardware_controllers::pimoroni_display_leds::Percentage;
+use crate::hardware_controllers::PimoroniDisplayController;
+use crate::{candy_weigher_ui, Irqs, StateEffect, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
 use defmt::info;
 use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
@@ -19,6 +17,7 @@ use embassy_rp::Peri;
 use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Sender;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use hx71x_pio::{PioHX710, PioHX710Program};
 
@@ -186,22 +185,23 @@ pub async fn hx710_load_cell_manager_simulated(
     tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
 ) {
     const TEST_WEIGHT_DATA: &[(f32, Duration)] = &[
-        (0.0, Duration::from_secs(5)),
-        (1.0, Duration::from_millis(300)),
-        (5.0, Duration::from_millis(300)),
-        (10.0, Duration::from_millis(300)),
-        (50.0, Duration::from_millis(300)),
-        (150.0, Duration::from_millis(300)),
-        (300.0, Duration::from_secs(10)),
-        (295.0, Duration::from_millis(300)),
-        (285.0, Duration::from_millis(300)),
-        (275.0, Duration::from_secs(5)),
-        (270.0, Duration::from_millis(300)),
-        (260.0, Duration::from_millis(300)),
-        (250.0, Duration::from_secs(5)),
+        (00000.0, Duration::from_secs(5)),
+        (10000.0, Duration::from_millis(300)),
+        (50000.0, Duration::from_millis(300)),
+        (100000.0, Duration::from_millis(300)),
+        (500000.0, Duration::from_millis(300)),
+        (1500000.0, Duration::from_millis(300)),
+        (3000000.0, Duration::from_secs(10)),
+        (2950000.0, Duration::from_millis(300)),
+        (2850000.0, Duration::from_millis(300)),
+        (2750000.0, Duration::from_secs(5)),
+        (2700000.0, Duration::from_millis(300)),
+        (2600000.0, Duration::from_millis(300)),
+        (2500000.0, Duration::from_secs(5)),
     ];
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
-        tx.send(StateEffect::WeightUpdate(*weight)).await;
+        tx.send(StateEffect::WeightUpdate(ScaleRawWeight(*weight)))
+            .await;
         embassy_time::Timer::after(*duration).await;
     }
 }
@@ -236,10 +236,22 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
 
         let direction = encoder.read().await;
         match direction {
-            Direction::Clockwise => base_weight += 2.5,
-            Direction::CounterClockwise => base_weight -= 2.5,
+            Direction::Clockwise => base_weight += 25000.0,
+            Direction::CounterClockwise => base_weight -= 25000.0,
         }
-        tx.send(StateEffect::WeightUpdate(base_weight)).await;
+        tx.send(StateEffect::WeightUpdate(ScaleRawWeight(base_weight)))
+            .await;
+    }
+}
+
+#[derive(defmt::Format, Debug, Copy, Clone)]
+pub struct ScaleRawWeight(f32);
+impl ScaleRawWeight {
+    pub const fn to_grams(self, scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
+        (self.0 - scale_raw_tare as f32) / scale_raw_1g_step(scale_raw_tare, scale_raw_50g)
+    }
+    pub const fn get_raw(self) -> f32 {
+        self.0
     }
 }
 
@@ -249,6 +261,7 @@ pub async fn hx710_load_cell_manager(
     pin11: Peri<'static, PIN_11>,
     pio1: Peri<'static, PIO1>,
     tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    calibration_mode_signal: &'static Signal<ThreadModeRawMutex, ()>,
 ) {
     let Pio {
         mut common, sm0, ..
@@ -258,19 +271,20 @@ pub async fn hx710_load_cell_manager(
 
     // Exponential moving average - to smooth readings.
     const EMA_FILTER_ALPHA: f32 = 0.2;
-    let mut ema_weight_g = 0.0;
-    let mut last_sent_g = 0.0;
-    tx.send(StateEffect::WeightUpdate(last_sent_g)).await;
+    let mut ema_weight_raw: Option<f32> = None;
 
     loop {
-        if HX710_CONTROL_SIGNAL.signaled() {
-            HX710_CONTROL_SIGNAL.reset();
-            let mut ma_100 = [0i32; 100];
+        if calibration_mode_signal.signaled() {
+            calibration_mode_signal.reset();
+            let mut ma_100 = [0f32; 100];
             for i in 0..=500 {
                 let raw_val = load_cell.read().await;
-                ma_100[i % 100] = raw_val;
+                ma_100[i % 100] = raw_val as f32;
                 if i >= 99 {
-                    tx.send(StateEffect::CalibWeightUpdate(raw_val)).await
+                    tx.send(StateEffect::CalibWeightUpdate(ScaleRawWeight(
+                        ma_100.iter().sum::<f32>() / 100.0,
+                    )))
+                    .await
                 }
                 // Small delay to prevent flooding logs, though PIO will
                 // naturally throttle based on the HX710 sample rate (10-40Hz).
@@ -278,16 +292,24 @@ pub async fn hx710_load_cell_manager(
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
                 Timer::after(Duration::from_millis(10)).await;
             }
+            tx.send(StateEffect::CalibModeComplete).await;
         }
         let raw_val = load_cell.read().await;
 
-        let calc_as_grams = (raw_val as f32 - SCALE_RAW_TARE) / SCALE_RAW_1G_STEP;
-        ema_weight_g =
-            (calc_as_grams * EMA_FILTER_ALPHA) + (ema_weight_g * (1.0 - EMA_FILTER_ALPHA));
-
-        if (ema_weight_g - last_sent_g).abs() > 0.1 {
-            last_sent_g = ema_weight_g;
-            tx.send(StateEffect::WeightUpdate(ema_weight_g)).await;
+        if let Some(ref mut ema_weight_raw) = ema_weight_raw {
+            let next_ema_weight_raw =
+                (raw_val as f32 * EMA_FILTER_ALPHA) + (*ema_weight_raw * (1.0 - EMA_FILTER_ALPHA));
+            if (next_ema_weight_raw - *ema_weight_raw).abs() > 0.1 {
+                tx.send(StateEffect::WeightUpdate(ScaleRawWeight(
+                    next_ema_weight_raw,
+                )))
+                .await;
+            }
+            *ema_weight_raw = next_ema_weight_raw;
+        } else {
+            tx.send(StateEffect::WeightUpdate(ScaleRawWeight(raw_val as f32)))
+                .await;
+            ema_weight_raw = Some(raw_val as f32)
         }
 
         // Small delay to prevent flooding logs and chewing battery, though PIO will

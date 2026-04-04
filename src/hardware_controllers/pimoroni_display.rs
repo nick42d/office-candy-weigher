@@ -1,4 +1,4 @@
-use crate::pimoroni_display_leds::Percentage;
+use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use core::cell::RefCell;
 use defmt::debug;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
