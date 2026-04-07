@@ -5,6 +5,8 @@
 - HX710 load cell ADC (e.g https://core-electronics.com.au/makerverse-load-cell-amplifier.html)
 - Rasbperry Pi Pico 1 (Pico 1 WH was used, but any of the Pico 1 range should work. The H version is useful as it has a connector soldered onboard to the debug pins)
 - ST7789 based colour LCD display (e.g https://core-electronics.com.au/pimoroni-pico-display-pack.html)
+- 4x momentary buttons (note - built into display pack above)
+- RGB LED (note - built into display pack above)
 ### Simulation only
 - Rotary encoder (e.g https://core-electronics.com.au/encoder-module-with-button.html)
 ### Deployment only
@@ -25,6 +27,8 @@ That's it - the app is now installed on the microcontroller and it will run auto
 
 ### Simulation
 To enable the rotary encoder as simulator, deploy and run via `cargo r --release -F hardware-sim`
+
+To enable the software simulator, deploy and run via `cargo r --release -F software-sim`
 
 ### Note
 This was developed on Linux - it should also be able to deploy via Windows however it's not been tested.
