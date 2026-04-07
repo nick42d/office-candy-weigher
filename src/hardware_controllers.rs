@@ -10,8 +10,8 @@ pub mod pimoroni_display_leds;
 
 static HX710_CONTROLLER_SIGNAL: Signal<ThreadModeRawMutex, ()> = Signal::new();
 
-pub struct HX710Controller;
-impl HX710Controller {
+pub struct LoadCellController;
+impl LoadCellController {
     pub fn enter_calibration_mode(&self) {
         HX710_CONTROLLER_SIGNAL.signal(());
     }

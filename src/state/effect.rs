@@ -102,6 +102,10 @@ impl Effect<&mut State> for StateEffect {
                 };
             }
             StateEffect::ButtonXHeld => {
+                // Note processing order of effects - this change happens, then effect resolved,
+                // then screen updated. Should do the write AFTER the draw then
+                // we'll actually see the screen change.
+                state.screen_shown = ScreenShown::SavingSettings;
                 return Some(crate::Effect::WriteConfig(Config {
                     tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
                     lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),

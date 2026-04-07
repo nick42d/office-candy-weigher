@@ -4,9 +4,9 @@ use core::fmt::Write;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
-use embedded_graphics::prelude::*;
 
 #[derive(PartialEq, Clone)]
 pub enum DisplayState {
@@ -23,6 +23,7 @@ pub enum DisplayState {
     CalibrationScreen {
         calibration_value: Option<f32>,
     },
+    SavingSettingsScreen,
 }
 
 pub fn draw<D>(state: &DisplayState, display: &mut D)
@@ -54,6 +55,7 @@ where
         DisplayState::CalibrationScreen { calibration_value } => {
             draw_calibration_screen(calibration_value, display)
         }
+        DisplayState::SavingSettingsScreen => draw_saving_settings_screen(display),
     }
 }
 
@@ -90,6 +92,23 @@ where
         );
         text_calibration_value.draw(display).unwrap();
     }
+}
+
+pub fn draw_saving_settings_screen<D>(display: &mut D)
+where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    display.clear(Rgb565::BLACK).unwrap();
+    let text_calibration_value = Text::new(
+        "Saving settings...",
+        Point::new(10, 90),
+        embedded_graphics::mono_font::MonoTextStyleBuilder::new()
+            .text_color(Rgb565::GREEN)
+            .font(&FONT_10X20)
+            .build(),
+    );
+    text_calibration_value.draw(display).unwrap();
 }
 
 pub fn draw_main_screen<D>(

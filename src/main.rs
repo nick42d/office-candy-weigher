@@ -3,11 +3,11 @@
 
 use crate::candy_weigher_ui::DisplayState;
 use crate::hardware_controllers::{
-    flash::Config, FlashController, HX710Controller, PimoroniDisplayRgbLedController,
+    flash::Config, FlashController, LoadCellController, PimoroniDisplayRgbLedController,
 };
 use crate::round_robin_select::PollFirst2;
 use crate::state::effect::StateEffect;
-use crate::state::{output_state, DisplayBacklightState, State};
+use crate::state::{output_state, DisplayBacklightState, ScreenShown, State};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
@@ -82,10 +82,12 @@ async fn main(spawner: Spawner) {
         peripherals.FLASH,
         peripherals.DMA_CH1,
         FLASH_STORAGE_OFFSET_BYTES,
+        MESSAGE_CHANNEL.sender(),
     );
     info!("Flash controller initialised");
 
-    let hx710_controller = HX710Controller;
+    let load_cell_controller = LoadCellController;
+    info!("Load cell controller initialised");
 
     let cfg: Config = flash_controller
         .read::<_, 256>()
@@ -135,7 +137,7 @@ async fn main(spawner: Spawner) {
             peripherals.PIN_11,
             peripherals.PIO1,
             MESSAGE_CHANNEL.sender(),
-            hx710_controller.get_signal(),
+            load_cell_controller.get_signal(),
         )
         .unwrap(),
     );
@@ -151,6 +153,7 @@ async fn main(spawner: Spawner) {
     );
     #[cfg(feature = "software-sim")]
     spawner.spawn(tasks::hx710_load_cell_manager_simulated(MESSAGE_CHANNEL.sender()).unwrap());
+
     info!("Core0 tasks spawned");
 
     let mut state = State {
@@ -181,10 +184,11 @@ async fn main(spawner: Spawner) {
         .await;
         match result {
             Either::First(message) => {
-                let _: Option<()> = message
-                    .flatten_option()
-                    .provide_left(&mut state)
-                    .resolve((&mut flash_controller, &hx710_controller));
+                let _: Option<()> = message.flatten_option().provide_left(&mut state).resolve((
+                    &mut flash_controller,
+                    &load_cell_controller,
+                    &mut state,
+                ));
             }
             Either::Second(transitions) => {
                 debug!("State transitioning");
@@ -203,12 +207,21 @@ pub enum Effect {
     EnterCalibrationMode,
 }
 
-impl<'a> effect_light::Effect<(&mut FlashController<'a>, &HX710Controller)> for Effect {
+impl<'a> effect_light::Effect<(&mut FlashController<'a>, &LoadCellController, &mut State)>
+    for Effect
+{
     type Output = ();
-    fn resolve(self, dependency: (&mut FlashController<'a>, &HX710Controller)) -> Self::Output {
-        let (flash_controller, hx710_controller) = dependency;
+    fn resolve(
+        self,
+        dependency: (&mut FlashController<'a>, &LoadCellController, &mut State),
+    ) -> Self::Output {
+        let (flash_controller, hx710_controller, state) = dependency;
         match self {
-            Effect::WriteConfig(config) => flash_controller.write::<_, 4096>(&config),
+            Effect::WriteConfig(config) => {
+                flash_controller.write::<_, 4096>(&config);
+                // Alternatively, this could be a message instead of direct code.
+                state.screen_shown = ScreenShown::Main
+            }
             Effect::EnterCalibrationMode => hx710_controller.enter_calibration_mode(),
         }
     }

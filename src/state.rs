@@ -38,6 +38,7 @@ pub enum ScreenShown {
     #[default]
     Main,
     Calibration,
+    SavingSettings,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -238,6 +239,7 @@ impl State {
             ScreenShown::Calibration => DisplayState::CalibrationScreen {
                 calibration_value: self.displayed_calibration_value_raw,
             },
+            ScreenShown::SavingSettings => DisplayState::SavingSettingsScreen,
         }
     }
     pub fn get_next_transitions(

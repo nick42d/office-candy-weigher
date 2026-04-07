@@ -1,7 +1,7 @@
 use crate::{
     config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
-    state::round_f32,
-    Irqs,
+    state::{effect::StateEffect, round_f32},
+    Irqs, MESSAGE_CHANNEL_SIZE,
 };
 use defmt::{error, info};
 use embassy_rp::{
@@ -9,6 +9,7 @@ use embassy_rp::{
     peripherals::{DMA_CH1, FLASH},
     Peri,
 };
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::Sender};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 const PICO_FLASH_SIZE_BYTES: usize = 2 * 1024 * 1024;
@@ -39,7 +40,12 @@ pub struct FlashController<'a> {
     offset: u32,
 }
 impl<'a> FlashController<'a> {
-    pub fn new(flash: Peri<'a, FLASH>, dma: Peri<'a, DMA_CH1>, offset: u32) -> Self {
+    pub fn new(
+        flash: Peri<'a, FLASH>,
+        dma: Peri<'a, DMA_CH1>,
+        offset: u32,
+        tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    ) -> Self {
         let flash = Flash::new(flash, dma, Irqs);
         Self { flash, offset }
     }
