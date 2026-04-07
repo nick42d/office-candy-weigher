@@ -40,12 +40,7 @@ pub struct FlashController<'a> {
     offset: u32,
 }
 impl<'a> FlashController<'a> {
-    pub fn new(
-        flash: Peri<'a, FLASH>,
-        dma: Peri<'a, DMA_CH1>,
-        offset: u32,
-        tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
-    ) -> Self {
+    pub fn new(flash: Peri<'a, FLASH>, dma: Peri<'a, DMA_CH1>, offset: u32) -> Self {
         let flash = Flash::new(flash, dma, Irqs);
         Self { flash, offset }
     }

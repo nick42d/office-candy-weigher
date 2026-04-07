@@ -82,7 +82,6 @@ async fn main(spawner: Spawner) {
         peripherals.FLASH,
         peripherals.DMA_CH1,
         FLASH_STORAGE_OFFSET_BYTES,
-        MESSAGE_CHANNEL.sender(),
     );
     info!("Flash controller initialised");
 

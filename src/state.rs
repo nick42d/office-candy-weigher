@@ -2,7 +2,7 @@ use crate::{
     candy_weigher_ui::DisplayState,
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME,
-        MAX_MOMENTARY_BUTTON_ON_TIME, TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
+        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
     },
     hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     CORE1_SIGNAL,
@@ -21,10 +21,10 @@ pub struct State {
     pub displayed_calibration_value_raw: Option<f32>,
     pub scale_raw_tare: f32,
     pub scale_raw_50g: f32,
-    pub t_l_pressed: MomentaryButtonState,
-    pub b_l_pressed: MomentaryButtonState,
-    pub t_r_pressed: MomentaryButtonState,
-    pub b_r_pressed: MomentaryButtonState,
+    pub t_l_pressed: ButtonState,
+    pub b_l_pressed: ButtonState,
+    pub t_r_pressed: ButtonState,
+    pub b_r_pressed: ButtonState,
     pub led_state: LedState,
     pub backlight_state: DisplayBacklightState,
     pub last_backlight_state: Option<DisplayBacklightState>,
@@ -76,31 +76,10 @@ impl DisplayBacklightState {
 }
 
 #[derive(Default)]
-pub enum MomentaryButtonState {
+pub enum ButtonState {
     #[default]
     Off,
-    PressedRecently {
-        on_at: Instant,
-    },
-    Held,
-}
-
-impl MomentaryButtonState {
-    pub fn next(&self) -> Self {
-        match self {
-            MomentaryButtonState::Off => MomentaryButtonState::Off,
-            MomentaryButtonState::Held => MomentaryButtonState::Held,
-            MomentaryButtonState::PressedRecently { .. } => MomentaryButtonState::Off,
-        }
-    }
-    pub fn next_timer(&self, max_on_time: Duration) -> Option<Instant> {
-        match self {
-            MomentaryButtonState::Off | MomentaryButtonState::Held => None,
-            MomentaryButtonState::PressedRecently { on_at } => {
-                Some(on_at.saturating_add(max_on_time))
-            }
-        }
-    }
+    On,
 }
 
 #[derive(Copy, Clone, Default, PartialEq)]
@@ -218,22 +197,10 @@ impl State {
                     lolly_weight_g: self.lolly_weight_g,
                     lolly_count,
                     lolly_count_change: lolly_count as i32 - prev_lolly_count,
-                    t_l_pressed: matches!(
-                        self.t_l_pressed,
-                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-                    ),
-                    t_r_pressed: matches!(
-                        self.t_r_pressed,
-                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-                    ),
-                    b_l_pressed: matches!(
-                        self.b_l_pressed,
-                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-                    ),
-                    b_r_pressed: matches!(
-                        self.b_r_pressed,
-                        MomentaryButtonState::PressedRecently { .. } | MomentaryButtonState::Held
-                    ),
+                    t_l_pressed: matches!(self.t_l_pressed, ButtonState::On),
+                    t_r_pressed: matches!(self.t_r_pressed, ButtonState::On),
+                    b_l_pressed: matches!(self.b_l_pressed, ButtonState::On),
+                    b_r_pressed: matches!(self.b_r_pressed, ButtonState::On),
                 }
             }
             ScreenShown::Calibration => DisplayState::CalibrationScreen {
@@ -273,42 +240,6 @@ impl State {
                     (
                         t,
                         (|this: &mut Self| this.backlight_state = this.backlight_state.next())
-                            as for<'a> fn(&'a mut Self),
-                    )
-                }),
-            self.t_l_pressed
-                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
-                .map(|t| {
-                    (
-                        t,
-                        (|this: &mut Self| this.t_l_pressed = this.t_l_pressed.next())
-                            as for<'a> fn(&'a mut Self),
-                    )
-                }),
-            self.t_r_pressed
-                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
-                .map(|t| {
-                    (
-                        t,
-                        (|this: &mut Self| this.t_r_pressed = this.t_r_pressed.next())
-                            as for<'a> fn(&'a mut Self),
-                    )
-                }),
-            self.b_l_pressed
-                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
-                .map(|t| {
-                    (
-                        t,
-                        (|this: &mut Self| this.b_l_pressed = this.b_l_pressed.next())
-                            as for<'a> fn(&'a mut Self),
-                    )
-                }),
-            self.b_r_pressed
-                .next_timer(MAX_MOMENTARY_BUTTON_ON_TIME)
-                .map(|t| {
-                    (
-                        t,
-                        (|this: &mut Self| this.b_r_pressed = this.b_r_pressed.next())
                             as for<'a> fn(&'a mut Self),
                     )
                 }),

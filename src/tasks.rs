@@ -1,6 +1,9 @@
 use core::cell::RefCell;
 
-use crate::config_consts::{scale_raw_1g_step, LOW_BACKLIGHT_PERCENTAGE};
+use crate::config_consts::{
+    scale_raw_1g_step, BUTTON_LONG_PRESS_THRESHOLD, BUTTON_REPEAT_THRESHOLD,
+    LOW_BACKLIGHT_PERCENTAGE,
+};
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::hardware_controllers::PimoroniDisplayController;
 use crate::{candy_weigher_ui, Irqs, StateEffect, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
@@ -64,8 +67,10 @@ pub async fn pico_display_button_a_manager(
     manage_repeating_button(
         button_a,
         StateEffect::ButtonAPressed,
-        StateEffect::ButtonAHeld,
-        StateEffect::ButtonAHoldCancelled,
+        StateEffect::ButtonARepeated,
+        StateEffect::ButtonAReleased,
+        BUTTON_LONG_PRESS_THRESHOLD,
+        BUTTON_REPEAT_THRESHOLD,
         tx,
     )
     .await;
@@ -79,8 +84,10 @@ pub async fn pico_display_button_b_manager(
     manage_repeating_button(
         button_b,
         StateEffect::ButtonBPressed,
-        StateEffect::ButtonBHeld,
-        StateEffect::ButtonBHoldCancelled,
+        StateEffect::ButtonBRepeated,
+        StateEffect::ButtonBReleased,
+        BUTTON_LONG_PRESS_THRESHOLD,
+        BUTTON_REPEAT_THRESHOLD,
         tx,
     )
     .await;
@@ -96,6 +103,7 @@ pub async fn pico_display_button_x_manager(
         StateEffect::ButtonXPressed,
         StateEffect::ButtonXHeld,
         StateEffect::ButtonXReleased,
+        BUTTON_LONG_PRESS_THRESHOLD,
         tx,
     )
     .await;
@@ -111,6 +119,7 @@ pub async fn pico_display_button_y_manager(
         StateEffect::ButtonYPressed,
         StateEffect::ButtonYHeld,
         StateEffect::ButtonYReleased,
+        BUTTON_LONG_PRESS_THRESHOLD,
         tx,
     )
     .await;
@@ -119,8 +128,10 @@ pub async fn pico_display_button_y_manager(
 async fn manage_repeating_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     mut button: Input<'static>,
     pressed_message: M,
-    held_message: M,
-    finished_holding_message: M,
+    repeat_message: M,
+    released_message: M,
+    first_repeat_threshold: Duration,
+    subsequent_repeat_threshold: Duration,
     tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
 ) where
     M: Copy,
@@ -132,23 +143,25 @@ async fn manage_repeating_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>
         // Wait for long press
         if let Either::First(_) = select(
             button.wait_for_high(),
-            embassy_time::Timer::after_millis(500),
+            //500ms
+            embassy_time::Timer::after(first_repeat_threshold),
         )
         .await
         {
+            tx.send(released_message).await;
             continue;
         }
-        tx.send(held_message).await;
-        tx.send(pressed_message).await;
+        tx.send(repeat_message).await;
         while let Either::Second(_) = select(
             button.wait_for_high(),
-            embassy_time::Timer::after_millis(100),
+            //100ms
+            embassy_time::Timer::after(subsequent_repeat_threshold),
         )
         .await
         {
-            tx.send(pressed_message).await;
+            tx.send(repeat_message).await;
         }
-        tx.send(finished_holding_message).await;
+        tx.send(released_message).await;
     }
 }
 
@@ -157,6 +170,7 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     pressed_message: M,
     held_message: M,
     released_message: M,
+    held_threshold: Duration,
     tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
 ) where
     M: Copy,
@@ -168,7 +182,7 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
         // Wait for long press
         if let Either::Second(_) = select(
             button.wait_for_high(),
-            embassy_time::Timer::after_millis(500),
+            embassy_time::Timer::after(held_threshold),
         )
         .await
         {
@@ -211,8 +225,6 @@ pub async fn hx710_load_cell_manager_simulated(
 pub async fn hx710_load_cell_manager_rotary_encoder(
     pin26: Peri<'static, embassy_rp::peripherals::PIN_26>,
     pin27: Peri<'static, embassy_rp::peripherals::PIN_27>,
-    // Button: vvv
-    // pin28: Peri<'static, PIN_28>,
     pio0: Peri<'static, embassy_rp::peripherals::PIO0>,
     tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
 ) {

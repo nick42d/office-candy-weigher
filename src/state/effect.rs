@@ -4,7 +4,7 @@ use crate::{
     config_consts::TOTAL_LED_FADEOUT_STEPS,
     hardware_controllers::flash::Config,
     state::{
-        round_f32, round_f32_dp, DisplayBacklightState, LedState, MomentaryButtonState,
+        round_f32, round_f32_dp, DisplayBacklightState, LedState, ButtonState,
         ScreenShown, State,
     },
     tasks::ScaleRawWeight,
@@ -17,10 +17,10 @@ use embassy_time::Instant;
 pub enum StateEffect {
     ButtonAPressed,
     ButtonBPressed,
-    ButtonAHeld,
-    ButtonBHeld,
-    ButtonAHoldCancelled,
-    ButtonBHoldCancelled,
+    ButtonARepeated,
+    ButtonBRepeated,
+    ButtonAReleased,
+    ButtonBReleased,
     ButtonXPressed,
     ButtonYPressed,
     ButtonXHeld,
@@ -41,70 +41,40 @@ impl Effect<&mut State> for StateEffect {
             state.screen_shown = ScreenShown::Main;
             return None;
         }
+        // Special case - reset the backlight timer when a button is pressed, does not consume the press.
+        if matches!(self, StateEffect::ButtonAPressed | StateEffect::ButtonBPressed | StateEffect::ButtonXPressed | StateEffect::ButtonYPressed) {
+            state.backlight_state = DisplayBacklightState::On {
+                on_at: Instant::now(),
+            };
+        }
         match self {
-            StateEffect::ButtonAHeld => {
-                state.t_l_pressed = MomentaryButtonState::Held;
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            StateEffect::ButtonBHeld => {
-                state.b_l_pressed = MomentaryButtonState::Held;
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            StateEffect::ButtonAHoldCancelled => {
-                state.t_l_pressed = MomentaryButtonState::Off;
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
-            StateEffect::ButtonBHoldCancelled => {
-                state.b_l_pressed = MomentaryButtonState::Off;
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
-            }
             StateEffect::ButtonAPressed => {
                 state.lolly_weight_g += 0.1;
-                if matches!(state.t_l_pressed, MomentaryButtonState::Off) {
-                    state.t_l_pressed = MomentaryButtonState::PressedRecently {
-                        on_at: Instant::now(),
-                    };
-                }
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
+                state.t_l_pressed = ButtonState::On;
+            }
+            StateEffect::ButtonARepeated => {
+                state.lolly_weight_g += 0.1;
+            }
+            StateEffect::ButtonAReleased => {
+                state.t_l_pressed = ButtonState::Off;
             }
             StateEffect::ButtonBPressed => {
                 state.lolly_weight_g -= 0.1;
-                if matches!(state.b_l_pressed, MomentaryButtonState::Off) {
-                    state.b_l_pressed = MomentaryButtonState::PressedRecently {
-                        on_at: Instant::now(),
-                    };
-                }
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
+                state.b_l_pressed = ButtonState::On;
+            }
+            StateEffect::ButtonBRepeated => {
+                state.lolly_weight_g -= 0.1;
+            }
+            StateEffect::ButtonBReleased => {
+                state.b_l_pressed = ButtonState::Off;
             }
             StateEffect::ButtonXPressed => {
                 state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
-                state.t_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
+                state.t_r_pressed = ButtonState::On;
             }
             StateEffect::ButtonYPressed => {
                 state.tare_weight_g = state.scale_weight_g;
-                state.b_r_pressed = MomentaryButtonState::PressedRecently {
-                    on_at: Instant::now(),
-                };
-                state.backlight_state = DisplayBacklightState::On {
-                    on_at: Instant::now(),
-                };
+                state.b_r_pressed = ButtonState::On;
             }
             StateEffect::ButtonXHeld => {
                 state.screen_shown = ScreenShown::SavingSettings;
@@ -120,8 +90,8 @@ impl Effect<&mut State> for StateEffect {
                 state.screen_shown = ScreenShown::Calibration;
                 return Some(crate::Effect::EnterCalibrationMode);
             }
-            StateEffect::ButtonXReleased => (),
-            StateEffect::ButtonYReleased => (),
+            StateEffect::ButtonXReleased => state.t_r_pressed = ButtonState::Off,
+            StateEffect::ButtonYReleased => state.b_r_pressed = ButtonState::Off,
             StateEffect::WeightUpdate(w) => {
                 let prev_tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
