@@ -184,11 +184,10 @@ async fn main(spawner: Spawner) {
         .await;
         match result {
             Either::First(message) => {
-                let _: Option<()> = message.flatten_option().provide_left(&mut state).resolve((
-                    &mut flash_controller,
-                    &load_cell_controller,
-                    &mut state,
-                ));
+                let _: Option<()> = message
+                    .flatten_option()
+                    .provide_left(&mut state)
+                    .resolve((&mut flash_controller, &load_cell_controller));
             }
             Either::Second(transitions) => {
                 debug!("State transitioning");
@@ -207,20 +206,13 @@ pub enum Effect {
     EnterCalibrationMode,
 }
 
-impl<'a> effect_light::Effect<(&mut FlashController<'a>, &LoadCellController, &mut State)>
-    for Effect
-{
+impl<'a> effect_light::Effect<(&mut FlashController<'a>, &LoadCellController)> for Effect {
     type Output = ();
-    fn resolve(
-        self,
-        dependency: (&mut FlashController<'a>, &LoadCellController, &mut State),
-    ) -> Self::Output {
-        let (flash_controller, hx710_controller, state) = dependency;
+    fn resolve(self, dependency: (&mut FlashController<'a>, &LoadCellController)) -> Self::Output {
+        let (flash_controller, hx710_controller) = dependency;
         match self {
             Effect::WriteConfig(config) => {
                 flash_controller.write::<_, 4096>(&config);
-                // Alternatively, this could be a message instead of direct code.
-                state.screen_shown = ScreenShown::Main
             }
             Effect::EnterCalibrationMode => hx710_controller.enter_calibration_mode(),
         }

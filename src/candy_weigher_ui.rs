@@ -101,7 +101,7 @@ where
 {
     display.clear(Rgb565::BLACK).unwrap();
     let text_calibration_value = Text::new(
-        "Saving settings...",
+        "Settings saved - press X to continue",
         Point::new(10, 90),
         embedded_graphics::mono_font::MonoTextStyleBuilder::new()
             .text_color(Rgb565::GREEN)

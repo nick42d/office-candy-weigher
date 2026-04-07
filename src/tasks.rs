@@ -277,6 +277,14 @@ pub async fn hx710_load_cell_manager(
 
     loop {
         if calibration_mode_signal.signaled() {
+            // Proposed workflow:
+            // Display - remove all weight from scale then press X/Y (or any key).
+            // Display - calibrating tare value
+            // Take 50 polls and disccard, then average of 200.
+            // Display - Tare weight calibrated. Add 50g weight, then press X/Y (or any
+            // key). Display - calibrating 50g value
+            // Send new calibration values
+            // Display - calibration complete - press X/Y (or any key) to continue.
             calibration_mode_signal.reset();
             let mut ma_100 = [0f32; 100];
             for i in 0..=500 {
