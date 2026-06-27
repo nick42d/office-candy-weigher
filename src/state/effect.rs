@@ -10,7 +10,7 @@ use crate::{
     tasks::ScaleRawWeight,
 };
 use defmt::debug;
-use effect_light::Effect;
+use effect_lite::Effect;
 use embassy_time::Instant;
 
 #[derive(Copy, Clone, Debug, defmt::Format)]

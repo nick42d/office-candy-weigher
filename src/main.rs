@@ -13,7 +13,7 @@ use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use defmt::*;
-use effect_light::{Effect as _, EffectExt};
+use effect_lite::{Effect as _, EffectExt};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
 use embassy_rp::bind_interrupts;
@@ -205,7 +205,7 @@ pub enum Effect {
     EnterCalibrationMode,
 }
 
-impl<'a> effect_light::Effect<(&mut FlashController<'a>, &LoadCellController)> for Effect {
+impl<'a> effect_lite::Effect<(&mut FlashController<'a>, &LoadCellController)> for Effect {
     type Output = ();
     fn resolve(self, dependency: (&mut FlashController<'a>, &LoadCellController)) -> Self::Output {
         let (flash_controller, hx710_controller) = dependency;

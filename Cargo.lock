@@ -378,7 +378,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "effect-light"
+name = "effect-lite"
 version = "0.2.0"
 
 [[package]]
@@ -1103,7 +1103,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "display-interface-spi",
- "effect-light",
+ "effect-lite",
  "eg-seven-segment",
  "embassy-embedded-hal",
  "embassy-executor",
