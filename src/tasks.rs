@@ -1,8 +1,9 @@
 use core::cell::RefCell;
+use core::num::NonZeroU32;
 
 use crate::config_consts::{
-    scale_raw_1g_step, BUTTON_LONG_PRESS_THRESHOLD, BUTTON_REPEAT_THRESHOLD,
-    LOW_BACKLIGHT_PERCENTAGE,
+    scale_raw_1g_step, BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD,
+    BUTTON_REPEAT_THRESHOLD, LOW_BACKLIGHT_PERCENTAGE,
 };
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::hardware_controllers::PimoroniDisplayController;
@@ -101,9 +102,10 @@ pub async fn pico_display_button_x_manager(
     manage_holdable_button(
         button_x,
         StateEffect::ButtonXPressed,
-        StateEffect::ButtonXHeld,
+        |progress| StateEffect::ButtonXHeld(progress),
         StateEffect::ButtonXReleased,
         BUTTON_LONG_PRESS_THRESHOLD,
+        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
     )
     .await;
@@ -117,9 +119,10 @@ pub async fn pico_display_button_y_manager(
     manage_holdable_button(
         button_y,
         StateEffect::ButtonYPressed,
-        StateEffect::ButtonYHeld,
+        |progress| StateEffect::ButtonYHeld(progress),
         StateEffect::ButtonYReleased,
         BUTTON_LONG_PRESS_THRESHOLD,
+        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
     )
     .await;
@@ -168,26 +171,38 @@ async fn manage_repeating_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>
 async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     mut button: Input<'static>,
     pressed_message: M,
-    held_message: M,
+    progress_message: impl Fn(f32) -> M,
     released_message: M,
     held_threshold: Duration,
+    progress_chunks: NonZeroU32,
     tx: Sender<'a, Mutex, M, BUTTON_CHANNEL_SIZE>,
 ) where
     M: Copy,
     Mutex: RawMutex,
 {
-    loop {
+    'outer: loop {
         button.wait_for_low().await;
         tx.send(pressed_message).await;
-        // Wait for long press
-        if let Either::Second(_) = select(
-            button.wait_for_high(),
-            embassy_time::Timer::after(held_threshold),
-        )
-        .await
-        {
-            tx.send(held_message).await;
+        for i in 1..=progress_chunks.into() {
+            // Send a progress update every duration / chunks or restart outer loop if
+            // button is released.
+            if let Either::First(_) = select(
+                button.wait_for_high(),
+                embassy_time::Timer::after(held_threshold / progress_chunks.into()),
+            )
+            .await
+            {
+                tx.send(released_message).await;
+                continue 'outer;
+            };
+
+            tx.send(progress_message(
+                i as f32 / u32::from(progress_chunks) as f32,
+            ))
+            .await;
         }
+        // Button may not be released yet after sending all progress updates, wait for
+        // it to be released
         button.wait_for_high().await;
         tx.send(released_message).await;
     }

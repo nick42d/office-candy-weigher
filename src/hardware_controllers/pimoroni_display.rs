@@ -96,7 +96,7 @@ impl<'a> PimoroniDisplayController<'a> {
             // Required for pico display.
             .invert_colors(mipidsi::options::ColorInversion::Inverted)
             // This puts button A in top left and button Y in bottom right.
-            .orientation(Orientation::new().rotate(Rotation::Deg90))
+            .orientation(Orientation::new().rotate(Rotation::Deg270))
             .init(&mut Delay)
             .unwrap();
 

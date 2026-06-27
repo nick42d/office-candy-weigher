@@ -9,7 +9,7 @@ use crate::{
     },
     tasks::ScaleRawWeight,
 };
-use defmt::debug;
+use defmt::{debug, warn};
 use effect_lite::Effect;
 use embassy_time::Instant;
 
@@ -23,8 +23,8 @@ pub enum StateEffect {
     ButtonBReleased,
     ButtonXPressed,
     ButtonYPressed,
-    ButtonXHeld,
-    ButtonYHeld,
+    ButtonXHeld(f32),
+    ButtonYHeld(f32),
     ButtonXReleased,
     ButtonYReleased,
     WeightUpdate(ScaleRawWeight),
@@ -40,6 +40,20 @@ impl Effect<&mut State> for StateEffect {
         if let ScreenShown::SavingSettings = state.screen_shown && matches!(self, StateEffect::ButtonXPressed) {
             state.screen_shown = ScreenShown::Main;
             return None;
+        }
+        // Special case - if showing the calibration screen, progress accordingly.
+        if let ScreenShown::Calibration(calibration_state)= state.screen_shown {
+            match calibration_state {
+                crate::state::CalibrationState::WaitingConfirmation & matches!(self, StateEffect::ButtonXPressed) => todo!(),
+                crate::state::CalibrationState::Calibrated & matches!(self, StateEffect::ButtonXPressed) => todo!(),
+                crate::state::CalibrationState::TareCalibrated(_) & matches!(self, StateEffect::ButtonXPressed) => {
+                    state.screen_shown = ScreenShown::Main;
+                    return None;
+                },
+                // Button press while calibrating is a no-op.
+                crate::state::CalibrationState::CalibratingTare(_) | 
+                crate::state::CalibrationState::Calibrating25g(_) & matches!(self, StateEffect::ButtonXPressed)=> return None;
+            }
         }
         // Special case - reset the backlight timer when a button is pressed, does not consume the press.
         if matches!(self, StateEffect::ButtonAPressed | StateEffect::ButtonBPressed | StateEffect::ButtonXPressed | StateEffect::ButtonYPressed) {
@@ -76,7 +90,8 @@ impl Effect<&mut State> for StateEffect {
                 state.tare_weight_g = state.scale_weight_g;
                 state.b_r_pressed = ButtonState::On;
             }
-            StateEffect::ButtonXHeld => {
+            StateEffect::ButtonXHeld(progress) => {
+                if round_f32_dp(progress, 1) == 1.0 {
                 state.screen_shown = ScreenShown::SavingSettings;
                 return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
                     tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
@@ -85,10 +100,19 @@ impl Effect<&mut State> for StateEffect {
                     scale_raw_50g: state.scale_raw_50g,
                     scale_raw_tare: state.scale_raw_tare,
                 }));
+                } else {
+                    //TODO!
+                    warn!("Unhandled button x progress update {}", progress);
+                }
             }
-            StateEffect::ButtonYHeld => {
-                state.screen_shown = ScreenShown::Calibration;
+            StateEffect::ButtonYHeld(progress) => {
+                if round_f32_dp(progress, 1) == 1.0 {
+                state.screen_shown = ScreenShown::Calibration(Default::default());
                 return Some(crate::OfficeCandyWeigherEffect::EnterCalibrationMode);
+                } else {
+                    //TODO!
+                    warn!("Unhandled button y progress update {}", progress);
+                }
             }
             StateEffect::ButtonXReleased => state.t_r_pressed = ButtonState::Off,
             StateEffect::ButtonYReleased => state.b_r_pressed = ButtonState::Off,

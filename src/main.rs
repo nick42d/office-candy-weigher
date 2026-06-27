@@ -8,7 +8,7 @@ use crate::hardware_controllers::{
 };
 use crate::round_robin_select::PollFirst2;
 use crate::state::effect::StateEffect;
-use crate::state::{output_state, DisplayBacklightState, ScreenShown, State};
+use crate::state::{output_state, DisplayBacklightState, State};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
@@ -29,6 +29,7 @@ use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use futures::FutureExt;
 use static_cell::StaticCell;
+
 use {defmt_rtt as _, panic_probe as _};
 
 const MESSAGE_CHANNEL_SIZE: usize = 16;

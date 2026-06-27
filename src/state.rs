@@ -33,11 +33,21 @@ pub struct State {
     pub screen_shown: ScreenShown,
 }
 
-#[derive(Default, Eq, PartialEq, Copy, Clone)]
+#[derive(Default, PartialEq, Copy, Clone)]
+pub enum CalibrationState {
+    #[default]
+    WaitingConfirmation,
+    CalibratingTare(f32),
+    TareCalibrated(f32),
+    Calibrating25g(f32),
+    Calibrated,
+}
+
+#[derive(Default, PartialEq, Copy, Clone)]
 pub enum ScreenShown {
     #[default]
     Main,
-    Calibration,
+    Calibration(CalibrationState),
     SavingSettings,
 }
 
@@ -203,7 +213,7 @@ impl State {
                     b_r_pressed: matches!(self.b_r_pressed, ButtonState::On),
                 }
             }
-            ScreenShown::Calibration => DisplayState::CalibrationScreen {
+            ScreenShown::Calibration(state) => DisplayState::CalibrationScreen(state) {
                 calibration_value: self.displayed_calibration_value_raw,
             },
             ScreenShown::SavingSettings => DisplayState::SavingSettingsScreen,

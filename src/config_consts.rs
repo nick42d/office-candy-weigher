@@ -1,3 +1,5 @@
+use core::num::NonZeroU32;
+
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 #[cfg(feature = "hardware-sim")]
 use embassy_rp::peripherals::{PIN_26, PIN_27, PIO0};
@@ -20,6 +22,7 @@ pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
 pub const SEMICIRCLE_DIAMETER: u32 = 44;
 pub const LOW_BACKLIGHT_PERCENTAGE: Percentage = Percentage(20);
 pub const BUTTON_LONG_PRESS_THRESHOLD: Duration = Duration::from_millis(500);
+pub const BUTTON_LONG_PRESS_PROGRESS_CHUNKS: NonZeroU32 = NonZeroU32::new(5).unwrap();
 pub const BUTTON_REPEAT_THRESHOLD: Duration = Duration::from_millis(100);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
 // Disable backlight off mode
