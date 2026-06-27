@@ -152,7 +152,8 @@ pub fn draw_main_screen<D>(
     .into_styled(arc_style);
     let circle_t_l =
         Circle::with_center(Point::new(0, 0), SEMICIRCLE_DIAMETER).into_styled(circle_style);
-    let circle_b_l = Circle::with_center(Point::new(0, DISPLAY_H as i32), SEMICIRCLE_DIAMETER)
+    // Experiment in half size circle
+    let circle_b_l = Circle::with_center(Point::new(0, DISPLAY_H as i32), SEMICIRCLE_DIAMETER / 2)
         .into_styled(circle_style);
     let circle_t_r = Circle::with_center(Point::new(DISPLAY_W as i32, 0), SEMICIRCLE_DIAMETER)
         .into_styled(circle_style);
@@ -236,6 +237,8 @@ pub fn draw_main_screen<D>(
 
     display.clear(Rgb565::BLACK).unwrap();
 
+    arc_b_l.draw(display).unwrap();
+
     if t_l_pressed {
         circle_t_l.draw(display).unwrap();
     } else {
@@ -248,9 +251,7 @@ pub fn draw_main_screen<D>(
     };
     if b_l_pressed {
         circle_b_l.draw(display).unwrap();
-    } else {
-        arc_b_l.draw(display).unwrap();
-    };
+    }
     if b_r_pressed {
         circle_b_r.draw(display).unwrap();
     } else {
