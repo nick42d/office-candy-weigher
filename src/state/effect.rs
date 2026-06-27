@@ -33,7 +33,7 @@ pub enum StateEffect {
 }
 
 impl Effect<&mut State> for StateEffect {
-    type Output = Option<crate::Effect>;
+    type Output = Option<crate::OfficeCandyWeigherEffect>;
     fn resolve(self, state: &mut State) -> Self::Output {
         debug!("About to handle message: {}", self);
         // Special case - if showing the saving settings screen, consume the first button X press.
@@ -78,7 +78,7 @@ impl Effect<&mut State> for StateEffect {
             }
             StateEffect::ButtonXHeld => {
                 state.screen_shown = ScreenShown::SavingSettings;
-                return Some(crate::Effect::WriteConfig(Config {
+                return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
                     tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
                     lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),
                     saved_tared_scale_weight: round_f32(state.saved_tared_scale_weight_g * 10.0),
@@ -88,7 +88,7 @@ impl Effect<&mut State> for StateEffect {
             }
             StateEffect::ButtonYHeld => {
                 state.screen_shown = ScreenShown::Calibration;
-                return Some(crate::Effect::EnterCalibrationMode);
+                return Some(crate::OfficeCandyWeigherEffect::EnterCalibrationMode);
             }
             StateEffect::ButtonXReleased => state.t_r_pressed = ButtonState::Off,
             StateEffect::ButtonYReleased => state.b_r_pressed = ButtonState::Off,

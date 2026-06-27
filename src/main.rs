@@ -2,6 +2,7 @@
 #![no_main]
 
 use crate::candy_weigher_ui::DisplayState;
+use crate::config_consts::OfficeCandyWeigherPeripherals;
 use crate::hardware_controllers::{
     flash::Config, FlashController, LoadCellController, PimoroniDisplayRgbLedController,
 };
@@ -13,7 +14,7 @@ use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
 use defmt::*;
-use effect_lite::{Effect as _, EffectExt};
+use effect_lite::{Effect, EffectExt};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
 use embassy_rp::bind_interrupts;
@@ -66,21 +67,22 @@ mod tasks;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let peripherals = embassy_rp::init(Default::default());
+    let peripherals =
+        OfficeCandyWeigherPeripherals::from_peripherals(embassy_rp::init(Default::default()));
     info!("Peripherals initialised");
 
     let mut display_led_controller = PimoroniDisplayRgbLedController::new(
-        peripherals.PWM_SLICE3,
-        peripherals.PWM_SLICE4,
-        peripherals.PIN_6,
-        peripherals.PIN_7,
-        peripherals.PIN_8,
+        peripherals.display_led_controller_rg_pwm_slice,
+        peripherals.display_led_controller_b_pwm_slice,
+        peripherals.display_led_controller_r_pin,
+        peripherals.display_led_controller_g_pin,
+        peripherals.display_led_controller_b_pin,
     );
     info!("LED controller initialised");
 
     let mut flash_controller: FlashController<'_> = FlashController::new(
-        peripherals.FLASH,
-        peripherals.DMA_CH1,
+        peripherals.flash,
+        peripherals.flash_dma,
         FLASH_STORAGE_OFFSET_BYTES,
     );
     info!("Flash controller initialised");
@@ -96,21 +98,21 @@ async fn main(spawner: Spawner) {
     info!("Loaded config: {}", cfg);
 
     spawn_core1(
-        peripherals.CORE1,
+        peripherals.core_1,
         CORE1_STACK.init(Stack::new()),
         move || {
             let core1_executor = CORE1_EXECUTOR.init(Executor::new());
             core1_executor.run(|spawner| {
                 spawner.spawn(
                     display_manager(
-                        peripherals.PIN_16,
-                        peripherals.PIN_17,
-                        peripherals.PIN_18,
-                        peripherals.PIN_19,
-                        peripherals.PIN_20,
-                        peripherals.PWM_SLICE2,
-                        peripherals.SPI0,
-                        peripherals.DMA_CH0,
+                        peripherals.display_manager_dcx_pin,
+                        peripherals.display_manager_spi_cs_pin,
+                        peripherals.display_manager_spi_clk_pin,
+                        peripherals.display_manager_spi_mosi_pin,
+                        peripherals.display_manager_backlight_pin,
+                        peripherals.display_manager_pwm_slice,
+                        peripherals.display_manager_spi,
+                        peripherals.display_manager_dma,
                     )
                     .unwrap(),
                 );
@@ -119,22 +121,22 @@ async fn main(spawner: Spawner) {
         },
     );
     spawner.spawn(
-        pico_display_button_a_manager(peripherals.PIN_12, MESSAGE_CHANNEL.sender()).unwrap(),
+        pico_display_button_a_manager(peripherals.button_a_pin, MESSAGE_CHANNEL.sender()).unwrap(),
     );
     spawner.spawn(
-        pico_display_button_b_manager(peripherals.PIN_13, MESSAGE_CHANNEL.sender()).unwrap(),
+        pico_display_button_b_manager(peripherals.button_b_pin, MESSAGE_CHANNEL.sender()).unwrap(),
     );
     spawner.spawn(
-        pico_display_button_x_manager(peripherals.PIN_14, MESSAGE_CHANNEL.sender()).unwrap(),
+        pico_display_button_x_manager(peripherals.button_x_pin, MESSAGE_CHANNEL.sender()).unwrap(),
     );
     spawner.spawn(
-        pico_display_button_y_manager(peripherals.PIN_15, MESSAGE_CHANNEL.sender()).unwrap(),
+        pico_display_button_y_manager(peripherals.button_y_pin, MESSAGE_CHANNEL.sender()).unwrap(),
     );
     spawner.spawn(
         hx710_load_cell_manager(
-            peripherals.PIN_10,
-            peripherals.PIN_11,
-            peripherals.PIO1,
+            peripherals.hx710_sclk_pin,
+            peripherals.hx710_dout_pin,
+            peripherals.hx710_pio,
             MESSAGE_CHANNEL.sender(),
             load_cell_controller.get_signal(),
         )
@@ -143,9 +145,9 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "hardware-sim")]
     spawner.spawn(
         tasks::hx710_load_cell_manager_rotary_encoder(
-            peripherals.PIN_26,
-            peripherals.PIN_27,
-            peripherals.PIO0,
+            peripherals.rotary_encoder_sclk_pin,
+            peripherals.rotary_encoder_dout_pin,
+            peripherals.rotary_encoder_pio,
             MESSAGE_CHANNEL.sender(),
         )
         .unwrap(),
@@ -200,20 +202,22 @@ async fn main(spawner: Spawner) {
 }
 
 #[derive(Debug)]
-pub enum Effect {
+pub enum OfficeCandyWeigherEffect {
     WriteConfig(Config),
     EnterCalibrationMode,
 }
 
-impl<'a> effect_lite::Effect<(&mut FlashController<'a>, &LoadCellController)> for Effect {
+impl<'a> Effect<(&mut FlashController<'a>, &LoadCellController)> for OfficeCandyWeigherEffect {
     type Output = ();
     fn resolve(self, dependency: (&mut FlashController<'a>, &LoadCellController)) -> Self::Output {
         let (flash_controller, hx710_controller) = dependency;
         match self {
-            Effect::WriteConfig(config) => {
+            OfficeCandyWeigherEffect::WriteConfig(config) => {
                 flash_controller.write::<_, 4096>(&config);
             }
-            Effect::EnterCalibrationMode => hx710_controller.enter_calibration_mode(),
+            OfficeCandyWeigherEffect::EnterCalibrationMode => {
+                hx710_controller.enter_calibration_mode()
+            }
         }
     }
 }
