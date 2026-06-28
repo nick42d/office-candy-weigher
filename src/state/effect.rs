@@ -4,7 +4,7 @@ use crate::{
     config_consts::TOTAL_LED_FADEOUT_STEPS,
     hardware_controllers::flash::Config,
     state::{
-        round_f32, round_f32_dp, DisplayBacklightState, LedState, ButtonState,
+        round_f32, round_f32_dp, ButtonState, CalibrationState, DisplayBacklightState, LedState,
         ScreenShown, State,
     },
     tasks::ScaleRawWeight,
@@ -14,109 +14,128 @@ use effect_lite::Effect;
 use embassy_time::Instant;
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
-pub enum StateEffect {
-    ButtonAPressed,
-    ButtonBPressed,
-    ButtonARepeated,
-    ButtonBRepeated,
-    ButtonAReleased,
-    ButtonBReleased,
-    ButtonXPressed,
-    ButtonYPressed,
-    ButtonXHeld(f32),
-    ButtonYHeld(f32),
-    ButtonXReleased,
-    ButtonYReleased,
+pub enum HardwareEvent {
+    Button(ButtonEvent),
     WeightUpdate(ScaleRawWeight),
     CalibWeightUpdate(ScaleRawWeight),
     CalibModeComplete,
 }
 
-impl Effect<&mut State> for StateEffect {
+#[derive(Copy, Clone, Debug, defmt::Format)]
+pub enum ButtonEvent {
+    APressed,
+    BPressed,
+    ARepeated,
+    BRepeated,
+    AReleased,
+    BReleased,
+    XPressed,
+    YPressed,
+    XHeld(f32),
+    YHeld(f32),
+    XReleased,
+    YReleased,
+}
+
+impl Effect<&mut State> for HardwareEvent {
     type Output = Option<crate::OfficeCandyWeigherEffect>;
     fn resolve(self, state: &mut State) -> Self::Output {
         debug!("About to handle message: {}", self);
-        // Special case - if showing the saving settings screen, consume the first button X press.
-        if let ScreenShown::SavingSettings = state.screen_shown && matches!(self, StateEffect::ButtonXPressed) {
-            state.screen_shown = ScreenShown::Main;
-            return None;
-        }
-        // Special case - if showing the calibration screen, progress accordingly.
-        if let ScreenShown::Calibration(calibration_state)= state.screen_shown {
-            match calibration_state {
-                crate::state::CalibrationState::WaitingConfirmation & matches!(self, StateEffect::ButtonXPressed) => todo!(),
-                crate::state::CalibrationState::Calibrated & matches!(self, StateEffect::ButtonXPressed) => todo!(),
-                crate::state::CalibrationState::TareCalibrated(_) & matches!(self, StateEffect::ButtonXPressed) => {
-                    state.screen_shown = ScreenShown::Main;
-                    return None;
-                },
-                // Button press while calibrating is a no-op.
-                crate::state::CalibrationState::CalibratingTare(_) | 
-                crate::state::CalibrationState::Calibrating25g(_) & matches!(self, StateEffect::ButtonXPressed)=> return None;
+        // Special case - if showing the saving settings screen, consume button events.
+        if let (ScreenShown::SavingSettings, HardwareEvent::Button(button_event)) =
+            (state.screen_shown, self)
+        {
+            // Specifically, transition screen on X.
+            if matches!(button_event, ButtonEvent::XPressed) {
+                state.screen_shown = ScreenShown::Main;
+                return None;
             }
         }
-        // Special case - reset the backlight timer when a button is pressed, does not consume the press.
-        if matches!(self, StateEffect::ButtonAPressed | StateEffect::ButtonBPressed | StateEffect::ButtonXPressed | StateEffect::ButtonYPressed) {
+        // Special case - if showing the calibration screen, consume button events.
+        if let (ScreenShown::Calibration(calibration_state), HardwareEvent::Button(button_event)) =
+            (state.screen_shown, self)
+        {
+            // Specifically, transition the correct screen on X.
+            if matches!(button_event, ButtonEvent::XPressed) {
+                match calibration_state {
+                    // TODO: Send an effect to weigh scale controller
+                    CalibrationState::WaitingConfirmation => {
+                        state.screen_shown =
+                            ScreenShown::Calibration(CalibrationState::CalibratingTare(0.0))
+                    }
+                    CalibrationState::TareCalibrated(_) => {
+                        state.screen_shown =
+                            ScreenShown::Calibration(CalibrationState::Calibrating25g(0.0))
+                    }
+                    CalibrationState::Calibrated => state.screen_shown = ScreenShown::Main,
+                    _ => (),
+                }
+                return None;
+            }
+        }
+        // Special case - reset the backlight timer when a button is pressed, does not
+        // consume the press.
+        if matches!(self, HardwareEvent::Button(_)) {
             state.backlight_state = DisplayBacklightState::On {
                 on_at: Instant::now(),
             };
         }
         match self {
-            StateEffect::ButtonAPressed => {
+            HardwareEvent::Button(ButtonEvent::APressed) => {
                 state.lolly_weight_g += 0.1;
                 state.t_l_pressed = ButtonState::On;
             }
-            StateEffect::ButtonARepeated => {
+            HardwareEvent::Button(ButtonEvent::ARepeated) => {
                 state.lolly_weight_g += 0.1;
             }
-            StateEffect::ButtonAReleased => {
+            HardwareEvent::Button(ButtonEvent::AReleased) => {
                 state.t_l_pressed = ButtonState::Off;
             }
-            StateEffect::ButtonBPressed => {
+            HardwareEvent::Button(ButtonEvent::BPressed) => {
                 state.lolly_weight_g -= 0.1;
                 state.b_l_pressed = ButtonState::On;
             }
-            StateEffect::ButtonBRepeated => {
+            HardwareEvent::Button(ButtonEvent::BRepeated) => {
                 state.lolly_weight_g -= 0.1;
             }
-            StateEffect::ButtonBReleased => {
+            HardwareEvent::Button(ButtonEvent::BReleased) => {
                 state.b_l_pressed = ButtonState::Off;
             }
-            StateEffect::ButtonXPressed => {
+            HardwareEvent::Button(ButtonEvent::XPressed) => {
                 state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
                 state.t_r_pressed = ButtonState::On;
             }
-            StateEffect::ButtonYPressed => {
+            HardwareEvent::Button(ButtonEvent::YPressed) => {
                 state.tare_weight_g = state.scale_weight_g;
                 state.b_r_pressed = ButtonState::On;
             }
-            StateEffect::ButtonXHeld(progress) => {
+            HardwareEvent::Button(ButtonEvent::XHeld(progress)) => {
                 if round_f32_dp(progress, 1) == 1.0 {
-                state.screen_shown = ScreenShown::SavingSettings;
-                return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
-                    tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
-                    lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),
-                    saved_tared_scale_weight: round_f32(state.saved_tared_scale_weight_g * 10.0),
-                    scale_raw_50g: state.scale_raw_50g,
-                    scale_raw_tare: state.scale_raw_tare,
-                }));
+                    state.screen_shown = ScreenShown::SavingSettings;
+                    return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
+                        tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
+                        lolly_weight_dg: round_f32(state.lolly_weight_g * 10.0),
+                        saved_tared_scale_weight: round_f32(
+                            state.saved_tared_scale_weight_g * 10.0,
+                        ),
+                        scale_raw_50g: state.scale_raw_50g,
+                        scale_raw_tare: state.scale_raw_tare,
+                    }));
                 } else {
-                    //TODO!
-                    warn!("Unhandled button x progress update {}", progress);
+                    state.t_r_pressed = ButtonState::Mid(progress)
                 }
             }
-            StateEffect::ButtonYHeld(progress) => {
+            HardwareEvent::Button(ButtonEvent::YHeld(progress)) => {
                 if round_f32_dp(progress, 1) == 1.0 {
-                state.screen_shown = ScreenShown::Calibration(Default::default());
-                return Some(crate::OfficeCandyWeigherEffect::EnterCalibrationMode);
+                    state.screen_shown = ScreenShown::Calibration(Default::default());
+                    return Some(crate::OfficeCandyWeigherEffect::EnterCalibrationMode);
                 } else {
-                    //TODO!
-                    warn!("Unhandled button y progress update {}", progress);
+                    state.b_r_pressed = ButtonState::Mid(progress)
                 }
             }
-            StateEffect::ButtonXReleased => state.t_r_pressed = ButtonState::Off,
-            StateEffect::ButtonYReleased => state.b_r_pressed = ButtonState::Off,
-            StateEffect::WeightUpdate(w) => {
+            HardwareEvent::Button(ButtonEvent::XReleased) => state.t_r_pressed = ButtonState::Off,
+            HardwareEvent::Button(ButtonEvent::YReleased) => state.b_r_pressed = ButtonState::Off,
+            HardwareEvent::WeightUpdate(w) => {
                 let prev_tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
                 let prev_lolly_count = round_f32(prev_tared_scale_weight_g / state.lolly_weight_g);
@@ -149,10 +168,10 @@ impl Effect<&mut State> for StateEffect {
                     };
                 }
             }
-            StateEffect::CalibWeightUpdate(w) => {
+            HardwareEvent::CalibWeightUpdate(w) => {
                 state.displayed_calibration_value_raw = Some(w.get_raw());
             }
-            StateEffect::CalibModeComplete => {
+            HardwareEvent::CalibModeComplete => {
                 state.displayed_calibration_value_raw = None;
                 state.screen_shown = ScreenShown::Main;
             }

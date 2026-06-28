@@ -7,7 +7,7 @@ use crate::hardware_controllers::{
     flash::Config, FlashController, LoadCellController, PimoroniDisplayRgbLedController,
 };
 use crate::round_robin_select::PollFirst2;
-use crate::state::effect::StateEffect;
+use crate::state::effect::HardwareEvent;
 use crate::state::{output_state, DisplayBacklightState, State};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
@@ -38,7 +38,7 @@ pub const FLASH_STORAGE_OFFSET_BYTES: u32 = 2040 * 1024;
 // STORAGE in memory.x is 8KB.
 const FLASH_STORAGE_SIZE_BYTES: u32 = 8 * 1024;
 
-static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE> =
+static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE> =
     Channel::new();
 // Give core1 (second core) it's own stack.
 static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();

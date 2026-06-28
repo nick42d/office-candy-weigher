@@ -1,6 +1,6 @@
 use crate::{
     config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
-    state::{effect::StateEffect, round_f32},
+    state::{effect::HardwareEvent, round_f32},
     Irqs, MESSAGE_CHANNEL_SIZE,
 };
 use defmt::{error, info};

@@ -7,7 +7,8 @@ use crate::config_consts::{
 };
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::hardware_controllers::PimoroniDisplayController;
-use crate::{candy_weigher_ui, Irqs, StateEffect, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
+use crate::state::effect::ButtonEvent;
+use crate::{candy_weigher_ui, HardwareEvent, Irqs, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
 use defmt::info;
 use embassy_futures::select::{select, Either};
 use embassy_rp::gpio::{Input, Pull};
@@ -62,14 +63,14 @@ pub async fn display_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_a_manager(
     pin12: Peri<'static, PIN_12>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
     manage_repeating_button(
         button_a,
-        StateEffect::ButtonAPressed,
-        StateEffect::ButtonARepeated,
-        StateEffect::ButtonAReleased,
+        HardwareEvent::Button(ButtonEvent::APressed),
+        HardwareEvent::Button(ButtonEvent::ARepeated),
+        HardwareEvent::Button(ButtonEvent::AReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_REPEAT_THRESHOLD,
         tx,
@@ -79,14 +80,14 @@ pub async fn pico_display_button_a_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_b_manager(
     pin13: Peri<'static, PIN_13>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
     manage_repeating_button(
         button_b,
-        StateEffect::ButtonBPressed,
-        StateEffect::ButtonBRepeated,
-        StateEffect::ButtonBReleased,
+        HardwareEvent::Button(ButtonEvent::BPressed),
+        HardwareEvent::Button(ButtonEvent::BRepeated),
+        HardwareEvent::Button(ButtonEvent::BReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_REPEAT_THRESHOLD,
         tx,
@@ -96,14 +97,14 @@ pub async fn pico_display_button_b_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_x_manager(
     pin14: Peri<'static, PIN_14>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_x = Input::new(pin14, Pull::Up);
     manage_holdable_button(
         button_x,
-        StateEffect::ButtonXPressed,
-        |progress| StateEffect::ButtonXHeld(progress),
-        StateEffect::ButtonXReleased,
+        HardwareEvent::Button(ButtonEvent::XPressed),
+        |progress| HardwareEvent::Button(ButtonEvent::XHeld(progress)),
+        HardwareEvent::Button(ButtonEvent::XReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
@@ -113,14 +114,14 @@ pub async fn pico_display_button_x_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_y_manager(
     pin15: Peri<'static, PIN_15>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_y = Input::new(pin15, Pull::Up);
     manage_holdable_button(
         button_y,
-        StateEffect::ButtonYPressed,
-        |progress| StateEffect::ButtonYHeld(progress),
-        StateEffect::ButtonYReleased,
+        HardwareEvent::Button(ButtonEvent::YPressed),
+        |progress| HardwareEvent::Button(ButtonEvent::YHeld(progress)),
+        HardwareEvent::Button(ButtonEvent::YReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
@@ -211,7 +212,7 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
 #[cfg(feature = "software-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_simulated(
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     const TEST_WEIGHT_DATA: &[(f32, Duration)] = &[
         (00000.0, Duration::from_secs(5)),
@@ -229,7 +230,7 @@ pub async fn hx710_load_cell_manager_simulated(
         (2500000.0, Duration::from_secs(5)),
     ];
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
-        tx.send(StateEffect::WeightUpdate(ScaleRawWeight(*weight)))
+        tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(*weight)))
             .await;
         embassy_time::Timer::after(*duration).await;
     }
@@ -241,7 +242,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
     pin26: Peri<'static, embassy_rp::peripherals::PIN_26>,
     pin27: Peri<'static, embassy_rp::peripherals::PIN_27>,
     pio0: Peri<'static, embassy_rp::peripherals::PIO0>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
 ) {
     use crate::Irqs;
 
@@ -266,7 +267,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
             Direction::Clockwise => base_weight += 25000.0,
             Direction::CounterClockwise => base_weight -= 25000.0,
         }
-        tx.send(StateEffect::WeightUpdate(ScaleRawWeight(base_weight)))
+        tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(base_weight)))
             .await;
     }
 }
@@ -287,7 +288,7 @@ pub async fn hx710_load_cell_manager(
     pin10: Peri<'static, PIN_10>,
     pin11: Peri<'static, PIN_11>,
     pio1: Peri<'static, PIO1>,
-    tx: Sender<'static, ThreadModeRawMutex, StateEffect, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
     calibration_mode_signal: &'static Signal<ThreadModeRawMutex, ()>,
 ) {
     let Pio {
@@ -318,7 +319,7 @@ pub async fn hx710_load_cell_manager(
                 let raw_val = load_cell.read().await;
                 ma_100[i % 100] = raw_val as f32;
                 if i >= 99 {
-                    tx.send(StateEffect::CalibWeightUpdate(ScaleRawWeight(
+                    tx.send(HardwareEvent::CalibWeightUpdate(ScaleRawWeight(
                         ma_100.iter().sum::<f32>() / 100.0,
                     )))
                     .await
@@ -329,7 +330,7 @@ pub async fn hx710_load_cell_manager(
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
                 Timer::after(Duration::from_millis(10)).await;
             }
-            tx.send(StateEffect::CalibModeComplete).await;
+            tx.send(HardwareEvent::CalibModeComplete).await;
         }
         let raw_val = load_cell.read().await;
 
@@ -337,14 +338,14 @@ pub async fn hx710_load_cell_manager(
             let next_ema_weight_raw =
                 (raw_val as f32 * EMA_FILTER_ALPHA) + (*ema_weight_raw * (1.0 - EMA_FILTER_ALPHA));
             if (next_ema_weight_raw - *ema_weight_raw).abs() > MIN_RAW_CHANGE_TOLERANCE {
-                tx.send(StateEffect::WeightUpdate(ScaleRawWeight(
+                tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(
                     next_ema_weight_raw,
                 )))
                 .await;
             }
             *ema_weight_raw = next_ema_weight_raw;
         } else {
-            tx.send(StateEffect::WeightUpdate(ScaleRawWeight(raw_val as f32)))
+            tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(raw_val as f32)))
                 .await;
             ema_weight_raw = Some(raw_val as f32)
         }

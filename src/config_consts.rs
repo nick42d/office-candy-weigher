@@ -25,8 +25,7 @@ pub const BUTTON_LONG_PRESS_THRESHOLD: Duration = Duration::from_millis(500);
 pub const BUTTON_LONG_PRESS_PROGRESS_CHUNKS: NonZeroU32 = NonZeroU32::new(5).unwrap();
 pub const BUTTON_REPEAT_THRESHOLD: Duration = Duration::from_millis(100);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
-// Disable backlight off mode
-pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = None;
+pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = Some(Duration::from_secs(60 * 5)); // 5 mins
 
 pub const DEFAULT_SCALE_RAW_TARE: f32 = 4190.0;
 pub const DEFAULT_SCALE_RAW_50G: f32 = 39807.0;
@@ -40,29 +39,31 @@ pub const fn scale_raw_1g_step(scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
 // By constraining all peripherals used in the project to this struct, it gives
 // the reader a single source of truth for connecting wiring.
 pub struct OfficeCandyWeigherPeripherals {
+    pub display_manager_pwm_slice: Peri<'static, PWM_SLICE2>,
     pub display_led_controller_rg_pwm_slice: Peri<'static, PWM_SLICE3>,
     pub display_led_controller_b_pwm_slice: Peri<'static, PWM_SLICE4>,
-    pub display_led_controller_r_pin: Peri<'static, PIN_6>,
-    pub display_led_controller_g_pin: Peri<'static, PIN_7>,
-    pub display_led_controller_b_pin: Peri<'static, PIN_8>,
     pub flash: Peri<'static, FLASH>,
+    pub display_manager_dma: Peri<'static, DMA_CH0>,
     pub flash_dma: Peri<'static, DMA_CH1>,
     pub core_1: Peri<'static, CORE1>,
     pub display_manager_spi: Peri<'static, SPI0>,
-    pub display_manager_spi_clk_pin: Peri<'static, PIN_18>,
-    pub display_manager_spi_mosi_pin: Peri<'static, PIN_19>,
-    pub display_manager_spi_cs_pin: Peri<'static, PIN_17>,
-    pub display_manager_dcx_pin: Peri<'static, PIN_16>,
-    pub display_manager_backlight_pin: Peri<'static, PIN_20>,
-    pub display_manager_pwm_slice: Peri<'static, PWM_SLICE2>,
-    pub display_manager_dma: Peri<'static, DMA_CH0>,
+    pub hx710_pio: Peri<'static, PIO1>,
+
+    pub display_led_controller_r_pin: Peri<'static, PIN_6>,
+    pub display_led_controller_g_pin: Peri<'static, PIN_7>,
+    pub display_led_controller_b_pin: Peri<'static, PIN_8>,
+    pub hx710_sclk_pin: Peri<'static, PIN_10>,
+    pub hx710_dout_pin: Peri<'static, PIN_11>,
     pub button_a_pin: Peri<'static, PIN_12>,
     pub button_b_pin: Peri<'static, PIN_13>,
     pub button_x_pin: Peri<'static, PIN_14>,
     pub button_y_pin: Peri<'static, PIN_15>,
-    pub hx710_pio: Peri<'static, PIO1>,
-    pub hx710_sclk_pin: Peri<'static, PIN_10>,
-    pub hx710_dout_pin: Peri<'static, PIN_11>,
+    pub display_manager_dcx_pin: Peri<'static, PIN_16>,
+    pub display_manager_spi_cs_pin: Peri<'static, PIN_17>,
+    pub display_manager_spi_clk_pin: Peri<'static, PIN_18>,
+    pub display_manager_spi_mosi_pin: Peri<'static, PIN_19>,
+    pub display_manager_backlight_pin: Peri<'static, PIN_20>,
+
     #[cfg(feature = "hardware-sim")]
     pub rotary_encoder_pio: Peri<'static, PIO0>,
     #[cfg(feature = "hardware-sim")]

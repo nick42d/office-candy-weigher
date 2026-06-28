@@ -89,6 +89,7 @@ impl DisplayBacklightState {
 pub enum ButtonState {
     #[default]
     Off,
+    Mid(f32),
     On,
 }
 
