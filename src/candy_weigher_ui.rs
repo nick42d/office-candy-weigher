@@ -1,5 +1,6 @@
 use crate::config_consts::{BUTTON_SEMICIRCLE_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER};
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
+use crate::state::CalibrationState;
 use core::fmt::Write;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -20,9 +21,7 @@ pub enum DisplayState {
         t_r_pressed: bool,
         b_r_pressed: bool,
     },
-    CalibrationScreen {
-        calibration_value: Option<f32>,
-    },
+    CalibrationScreen(CalibrationState),
     SavingSettingsScreen,
 }
 
@@ -52,46 +51,100 @@ where
             b_r_pressed,
             display,
         ),
-        DisplayState::CalibrationScreen { calibration_value } => {
-            draw_calibration_screen(calibration_value, display)
-        }
+        DisplayState::CalibrationScreen(state) => draw_calibration_screen(state, display),
         DisplayState::SavingSettingsScreen => draw_saving_settings_screen(display),
     }
 }
 
-pub fn draw_calibration_screen<D>(calibration_value: Option<f32>, display: &mut D)
+pub fn draw_calibration_screen<D>(state: CalibrationState, display: &mut D)
 where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
     display.clear(Rgb565::BLACK).unwrap();
-    if let Some(calibration_value) = calibration_value {
-        // Max value is 2_147_483_647 (10 digits), add extra char for minus sign.
-        let mut calibration_value_str = heapless::String::<11>::new();
-        core::write!(&mut calibration_value_str, "{}", calibration_value as i32).unwrap();
-        let text_calibration_value = Text::new(
-            &calibration_value_str,
-            Point::new(10, 90),
-            eg_seven_segment::SevenSegmentStyleBuilder::new()
-                .digit_size(Size {
-                    width: 30,
-                    height: 50,
-                })
-                .segment_color(Rgb565::GREEN)
-                .build(),
-        );
-        text_calibration_value.draw(display).unwrap();
-    } else {
-        let text_calibration_value = Text::new(
-            "Calibrating...",
-            Point::new(10, 90),
-            embedded_graphics::mono_font::MonoTextStyleBuilder::new()
-                .text_color(Rgb565::GREEN)
-                .font(&FONT_10X20)
-                .build(),
-        );
-        text_calibration_value.draw(display).unwrap();
+    let text_style = embedded_graphics::mono_font::MonoTextStyleBuilder::new()
+        .text_color(Rgb565::GREEN)
+        .font(&FONT_10X20)
+        .build();
+    match state {
+        CalibrationState::TareCalibrated {
+            latest_tare_calib_value,
+        } => {
+            Text::new(
+                "Tare callibration complete <Results tbc>. Place 50g weight on scale and press x to continue calibration.",
+                Point::new(10, 90),
+                text_style,
+            )
+            .draw(display)
+            .unwrap();
+        }
+        CalibrationState::CalibratingTare {
+            latest_tare_calib_value,
+        } => {
+            Text::new("CalibratingTareMessageTBC", Point::new(10, 90), text_style)
+                .draw(display)
+                .unwrap();
+        }
+        CalibrationState::Calibrating50g {
+            latest_tare_calib_value,
+            latest_50g_calib_value,
+        } => {
+            Text::new("Calibrating25gMessageTBC", Point::new(10, 90), text_style)
+                .draw(display)
+                .unwrap();
+        }
+        CalibrationState::WaitingConfirmation => {
+            Text::new(
+                "Remove all weight from the scale and press x to commence calibration.",
+                Point::new(10, 90),
+                text_style,
+            )
+            .draw(display)
+            .unwrap();
+        }
+        CalibrationState::Calibrated => {
+            Text::new(
+                "Calibration complete <Results tbc>. Press x to save.",
+                Point::new(10, 90),
+                text_style,
+            )
+            .draw(display)
+            .unwrap();
+        }
+        CalibrationState::Loading => {
+            Text::new("Loading...", Point::new(10, 90), text_style)
+                .draw(display)
+                .unwrap();
+        }
     }
+    // if let Some(calibration_value) = calibration_value {
+    //     // Max value is 2_147_483_647 (10 digits), add extra char for minus
+    // sign.     let mut calibration_value_str =
+    // heapless::String::<11>::new();     core::write!(&mut
+    // calibration_value_str, "{}", calibration_value as i32).unwrap();
+    //     let text_calibration_value = Text::new(
+    //         &calibration_value_str,
+    //         Point::new(10, 90),
+    //         eg_seven_segment::SevenSegmentStyleBuilder::new()
+    //             .digit_size(Size {
+    //                 width: 30,
+    //                 height: 50,
+    //             })
+    //             .segment_color(Rgb565::GREEN)
+    //             .build(),
+    //     );
+    //     text_calibration_value.draw(display).unwrap();
+    // } else {
+    //     let text_calibration_value = Text::new(
+    //         "Calibrating...",
+    //         Point::new(10, 90),
+    //         embedded_graphics::mono_font::MonoTextStyleBuilder::new()
+    //             .text_color(Rgb565::GREEN)
+    //             .font(&FONT_10X20)
+    //             .build(),
+    //     );
+    //     text_calibration_value.draw(display).unwrap();
+    // }
 }
 
 pub fn draw_saving_settings_screen<D>(display: &mut D)

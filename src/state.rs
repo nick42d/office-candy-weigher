@@ -5,6 +5,7 @@ use crate::{
         TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
     },
     hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
+    tasks::ScaleRawWeight,
     CORE1_SIGNAL,
 };
 use core::ops::Mul;
@@ -18,7 +19,6 @@ pub struct State {
     pub scale_weight_g: f32,
     pub saved_tared_scale_weight_g: f32,
     pub lolly_weight_g: f32,
-    pub displayed_calibration_value_raw: Option<f32>,
     pub scale_raw_tare: f32,
     pub scale_raw_50g: f32,
     pub t_l_pressed: ButtonState,
@@ -33,13 +33,20 @@ pub struct State {
     pub screen_shown: ScreenShown,
 }
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum CalibrationState {
-    #[default]
+    Loading,
     WaitingConfirmation,
-    CalibratingTare(f32),
-    TareCalibrated(f32),
-    Calibrating25g(f32),
+    CalibratingTare {
+        latest_tare_calib_value: ScaleRawWeight,
+    },
+    TareCalibrated {
+        latest_tare_calib_value: ScaleRawWeight,
+    },
+    Calibrating50g {
+        latest_tare_calib_value: ScaleRawWeight,
+        latest_50g_calib_value: ScaleRawWeight,
+    },
     Calibrated,
 }
 
@@ -180,7 +187,6 @@ impl Default for State {
             last_led_state: Default::default(),
             last_backlight_state: Default::default(),
             screen_shown: Default::default(),
-            displayed_calibration_value_raw: Default::default(),
             backlight_state: DisplayBacklightState::On {
                 on_at: Instant::now(),
             },
@@ -214,9 +220,7 @@ impl State {
                     b_r_pressed: matches!(self.b_r_pressed, ButtonState::On),
                 }
             }
-            ScreenShown::Calibration(state) => DisplayState::CalibrationScreen(state) {
-                calibration_value: self.displayed_calibration_value_raw,
-            },
+            ScreenShown::Calibration(state) => DisplayState::CalibrationScreen(state),
             ScreenShown::SavingSettings => DisplayState::SavingSettingsScreen,
         }
     }

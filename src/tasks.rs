@@ -276,7 +276,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
     }
 }
 
-#[derive(defmt::Format, Debug, Copy, Clone)]
+#[derive(defmt::Format, PartialEq, Debug, Copy, Clone)]
 pub struct ScaleRawWeight(f32);
 impl ScaleRawWeight {
     pub const fn to_grams(self, scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {

@@ -205,7 +205,7 @@ async fn main(spawner: Spawner) {
 #[derive(Debug)]
 pub enum OfficeCandyWeigherEffect {
     WriteConfig(Config),
-    EnterCalibrationMode,
+    EnterOrProgressCalibrationMode,
 }
 
 impl<'a> Effect<(&mut FlashController<'a>, &LoadCellController)> for OfficeCandyWeigherEffect {
@@ -216,8 +216,8 @@ impl<'a> Effect<(&mut FlashController<'a>, &LoadCellController)> for OfficeCandy
             OfficeCandyWeigherEffect::WriteConfig(config) => {
                 flash_controller.write::<_, 4096>(&config);
             }
-            OfficeCandyWeigherEffect::EnterCalibrationMode => {
-                hx710_controller.enter_calibration_mode()
+            OfficeCandyWeigherEffect::EnterOrProgressCalibrationMode => {
+                hx710_controller.enter_or_progress_calibration_mode()
             }
         }
     }

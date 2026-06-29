@@ -12,7 +12,7 @@ static HX710_CONTROLLER_SIGNAL: Signal<ThreadModeRawMutex, ()> = Signal::new();
 
 pub struct LoadCellController;
 impl LoadCellController {
-    pub fn enter_calibration_mode(&self) {
+    pub fn enter_or_progress_calibration_mode(&self) {
         HX710_CONTROLLER_SIGNAL.signal(());
     }
     pub fn get_signal(&self) -> &'static Signal<ThreadModeRawMutex, ()> {

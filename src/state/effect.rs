@@ -73,7 +73,7 @@ impl Effect<&mut State> for HardwareEvent {
                     }
                     CalibrationState::TareCalibrated(_) => {
                         state.screen_shown =
-                            ScreenShown::Calibration(CalibrationState::Calibrating25g(0.0))
+                            ScreenShown::Calibration(CalibrationState::Calibrating50g(0.0))
                     }
                     CalibrationState::Calibrated => state.screen_shown = ScreenShown::Main,
                     _ => (),
@@ -118,7 +118,7 @@ impl Effect<&mut State> for HardwareEvent {
                 state.b_r_pressed = ButtonState::On;
             }
             HardwareEvent::Button(ButtonEvent::XHeld(progress)) => {
-                if round_f32_dp(progress, 1) == 1.0 {
+                if round_f32(progress * 100.0) == 100 {
                     state.screen_shown = ScreenShown::SavingSettings;
                     return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
                         tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
@@ -134,9 +134,9 @@ impl Effect<&mut State> for HardwareEvent {
                 }
             }
             HardwareEvent::Button(ButtonEvent::YHeld(progress)) => {
-                if round_f32_dp(progress, 1) == 1.0 {
+                if round_f32(progress * 100.0) == 100 {
                     state.screen_shown = ScreenShown::Calibration(Default::default());
-                    return Some(crate::OfficeCandyWeigherEffect::EnterCalibrationMode);
+                    return Some(crate::OfficeCandyWeigherEffect::EnterOrProgressCalibrationMode);
                 } else {
                     state.b_r_pressed = ButtonState::Mid(progress)
                 }
