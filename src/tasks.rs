@@ -7,7 +7,7 @@ use crate::config_consts::{
 };
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::hardware_controllers::PimoroniDisplayController;
-use crate::state::effect::ButtonEvent;
+use crate::state::effect::{ButtonEvent, LoadCellEvent};
 use crate::{candy_weigher_ui, HardwareEvent, Irqs, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
 use defmt::info;
 use embassy_futures::select::{select, Either};
@@ -230,8 +230,10 @@ pub async fn hx710_load_cell_manager_simulated(
         (2500000.0, Duration::from_secs(5)),
     ];
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
-        tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(*weight)))
-            .await;
+        tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+            ScaleRawWeight(*weight),
+        )))
+        .await;
         embassy_time::Timer::after(*duration).await;
     }
 }
@@ -267,8 +269,10 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
             Direction::Clockwise => base_weight += 25000.0,
             Direction::CounterClockwise => base_weight -= 25000.0,
         }
-        tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(base_weight)))
-            .await;
+        tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+            ScaleRawWeight(base_weight),
+        )))
+        .await;
     }
 }
 
@@ -304,24 +308,38 @@ pub async fn hx710_load_cell_manager(
     let mut ema_weight_raw: Option<f32> = None;
 
     loop {
+        // Enter calibration mode if signalled when in output mode.
         if calibration_mode_signal.signaled() {
-            // Proposed workflow:
-            // Display - remove all weight from scale then press X/Y (or any key).
-            // Display - calibrating tare value
-            // Take 50 polls and disccard, then average of 200.
-            // Display - Tare weight calibrated. Add 50g weight, then press X/Y (or any
-            // key). Display - calibrating 50g value
-            // Send new calibration values
-            // Display - calibration complete - press X/Y (or any key) to continue.
+            // Calibration mode workflow:
+            // - Display info screen on device (remove all weight from screen then press
+            // button x).
+            // - Wait for signal.
+            // - Complete tare calibration, progressively updating value on device.
+            // - Display final tare calibration value on screen, ask user to put 50g weight
+            //   on device and press x.
+            // - Wait for signal.
+            // - Complete 50g calibration, progressively updating value on device.
+            // - Display final tare + 50g calibration values on screen, press x to save
+            //   settings.
+            // - Wait for signal.
+            // - Send calibration complete message.
             calibration_mode_signal.reset();
+            tx.send(HardwareEvent::LoadCell(LoadCellEvent::EnteredCalibMode))
+                .await;
+            calibration_mode_signal.wait().await;
+            calibration_mode_signal.reset();
+
+            // Tare calibration
             let mut ma_100 = [0f32; 100];
             for i in 0..=500 {
                 let raw_val = load_cell.read().await;
                 ma_100[i % 100] = raw_val as f32;
                 if i >= 99 {
-                    tx.send(HardwareEvent::CalibWeightUpdate(ScaleRawWeight(
-                        ma_100.iter().sum::<f32>() / 100.0,
-                    )))
+                    tx.send(HardwareEvent::LoadCell(
+                        LoadCellEvent::CalibTareWeightUpdate(ScaleRawWeight(
+                            ma_100.iter().sum::<f32>() / 100.0,
+                        )),
+                    ))
                     .await
                 }
                 // Small delay to prevent flooding logs, though PIO will
@@ -330,7 +348,36 @@ pub async fn hx710_load_cell_manager(
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
                 Timer::after(Duration::from_millis(10)).await;
             }
-            tx.send(HardwareEvent::CalibModeComplete).await;
+            tx.send(HardwareEvent::LoadCell(
+                LoadCellEvent::CalibTareWeightModeComplete,
+            ))
+            .await;
+            calibration_mode_signal.wait().await;
+            calibration_mode_signal.reset();
+
+            // 50g calibration
+            let mut ma_100 = [0f32; 100];
+            for i in 0..=500 {
+                let raw_val = load_cell.read().await;
+                ma_100[i % 100] = raw_val as f32;
+                if i >= 99 {
+                    tx.send(HardwareEvent::LoadCell(
+                        LoadCellEvent::Calib50gWeightUpdate(ScaleRawWeight(
+                            ma_100.iter().sum::<f32>() / 100.0,
+                        )),
+                    ))
+                    .await
+                }
+                // Small delay to prevent flooding logs, though PIO will
+                // naturally throttle based on the HX710 sample rate (10-40Hz).
+                //
+                // Delay is smaller here as chewing battery not a concern in calibration mode.
+                Timer::after(Duration::from_millis(10)).await;
+            }
+            tx.send(HardwareEvent::LoadCell(LoadCellEvent::CalibModeComplete))
+                .await;
+            calibration_mode_signal.wait().await;
+            calibration_mode_signal.reset();
         }
         let raw_val = load_cell.read().await;
 
@@ -338,15 +385,17 @@ pub async fn hx710_load_cell_manager(
             let next_ema_weight_raw =
                 (raw_val as f32 * EMA_FILTER_ALPHA) + (*ema_weight_raw * (1.0 - EMA_FILTER_ALPHA));
             if (next_ema_weight_raw - *ema_weight_raw).abs() > MIN_RAW_CHANGE_TOLERANCE {
-                tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(
-                    next_ema_weight_raw,
+                tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+                    ScaleRawWeight(next_ema_weight_raw),
                 )))
                 .await;
             }
             *ema_weight_raw = next_ema_weight_raw;
         } else {
-            tx.send(HardwareEvent::WeightUpdate(ScaleRawWeight(raw_val as f32)))
-                .await;
+            tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+                ScaleRawWeight(raw_val as f32),
+            )))
+            .await;
             ema_weight_raw = Some(raw_val as f32)
         }
 

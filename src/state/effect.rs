@@ -16,9 +16,7 @@ use embassy_time::Instant;
 #[derive(Copy, Clone, Debug, defmt::Format)]
 pub enum HardwareEvent {
     Button(ButtonEvent),
-    WeightUpdate(ScaleRawWeight),
-    CalibWeightUpdate(ScaleRawWeight),
-    CalibModeComplete,
+    LoadCell(LoadCellEvent),
 }
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
@@ -35,6 +33,16 @@ pub enum ButtonEvent {
     YHeld(f32),
     XReleased,
     YReleased,
+}
+
+#[derive(Copy, Clone, Debug, defmt::Format)]
+pub enum LoadCellEvent {
+    WeightUpdate(ScaleRawWeight),
+    EnteredCalibMode,
+    CalibTareWeightUpdate(ScaleRawWeight),
+    CalibTareWeightModeComplete,
+    Calib50gWeightUpdate(ScaleRawWeight),
+    CalibModeComplete,
 }
 
 impl Effect<&mut State> for HardwareEvent {
@@ -135,7 +143,7 @@ impl Effect<&mut State> for HardwareEvent {
             }
             HardwareEvent::Button(ButtonEvent::XReleased) => state.t_r_pressed = ButtonState::Off,
             HardwareEvent::Button(ButtonEvent::YReleased) => state.b_r_pressed = ButtonState::Off,
-            HardwareEvent::WeightUpdate(w) => {
+            HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(w)) => {
                 let prev_tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
                 let prev_lolly_count = round_f32(prev_tared_scale_weight_g / state.lolly_weight_g);
@@ -168,10 +176,10 @@ impl Effect<&mut State> for HardwareEvent {
                     };
                 }
             }
-            HardwareEvent::CalibWeightUpdate(w) => {
+            HardwareEvent::LoadCell(LoadCellEvent::CalibTareWeightUpdate(w)) => {
                 state.displayed_calibration_value_raw = Some(w.get_raw());
             }
-            HardwareEvent::CalibModeComplete => {
+            HardwareEvent::LoadCell(LoadCellEvent::CalibModeComplete) => {
                 state.displayed_calibration_value_raw = None;
                 state.screen_shown = ScreenShown::Main;
             }
