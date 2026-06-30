@@ -1,4 +1,5 @@
 use crate::{
+    CORE1_SIGNAL,
     candy_weigher_ui::DisplayState,
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME,
@@ -6,7 +7,7 @@ use crate::{
     },
     hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
     tasks::ScaleRawWeight,
-    CORE1_SIGNAL,
+    utils::round_f32,
 };
 use core::ops::Mul;
 use defmt::debug;
@@ -66,27 +67,22 @@ pub enum DisplayBacklightState {
 }
 
 impl DisplayBacklightState {
-    pub fn next(self) -> Self {
+    pub fn handle_transition(self, prev_on_at: Instant) -> Self {
         match self {
             DisplayBacklightState::Off => DisplayBacklightState::Off,
-            DisplayBacklightState::LowPower { .. } => DisplayBacklightState::Off,
-            DisplayBacklightState::On { on_at } => DisplayBacklightState::LowPower { on_at },
-        }
-    }
-    pub fn next_timer(
-        &self,
-        time_to_backlight_low: Duration,
-        time_from_backlight_low_to_off: Option<Duration>,
-    ) -> Option<Instant> {
-        match self {
-            DisplayBacklightState::Off => None,
-            DisplayBacklightState::LowPower { on_at } => time_from_backlight_low_to_off.map(|t| {
-                on_at
-                    .saturating_add(time_to_backlight_low)
-                    .saturating_add(t)
-            }),
+            DisplayBacklightState::LowPower { on_at } => {
+                if on_at == prev_on_at {
+                    DisplayBacklightState::Off
+                } else {
+                    DisplayBacklightState::LowPower { on_at }
+                }
+            }
             DisplayBacklightState::On { on_at } => {
-                Some(on_at.saturating_add(time_to_backlight_low))
+                if on_at == prev_on_at {
+                    DisplayBacklightState::LowPower { on_at }
+                } else {
+                    DisplayBacklightState::On { on_at }
+                }
             }
         }
     }
@@ -117,7 +113,7 @@ pub enum LedState {
 }
 
 impl LedState {
-    pub fn next(self) -> Self {
+    pub fn next(self, transition_start_time: Instant) -> Self {
         match self {
             LedState::Off => LedState::Off,
             LedState::Red {
@@ -150,26 +146,26 @@ impl LedState {
             },
         }
     }
-    pub fn next_timer(&self, total_animation_duration: Duration) -> Option<Instant> {
-        match self {
-            LedState::Off => None,
-            LedState::Red {
-                total_steps,
-                current_step_at,
-                ..
-            }
-            | LedState::Blue {
-                total_steps,
-                current_step_at,
-                ..
-            } => {
-                let max_step_length = total_animation_duration
-                    .checked_div(*total_steps as u32)
-                    .unwrap_or_default();
-                Some(current_step_at.saturating_add(max_step_length))
-            }
-        }
-    }
+    // pub fn next_timer(&self, total_animation_duration: Duration) ->
+    // Option<Instant> {     match self {
+    //         LedState::Off => None,
+    //         LedState::Red {
+    //             total_steps,
+    //             current_step_at,
+    //             ..
+    //         }
+    //         | LedState::Blue {
+    //             total_steps,
+    //             current_step_at,
+    //             ..
+    //         } => {
+    //             let max_step_length = total_animation_duration
+    //                 .checked_div(*total_steps as u32)
+    //                 .unwrap_or_default();
+    //             Some(current_step_at.saturating_add(max_step_length))
+    //         }
+    //     }
+    // }
 }
 
 impl Default for State {
@@ -224,49 +220,12 @@ impl State {
             ScreenShown::SavingSettings => DisplayState::SavingSettingsScreen,
         }
     }
-    pub fn get_next_transitions(
-        &self,
-    ) -> Option<(
-        Instant,
-        impl Iterator<Item = for<'a> fn(&'a mut Self)> + use<>,
-    )> {
-        let transitions = self.get_transitions();
-        let min_duration = transitions
-            .flatten()
-            .min_by_key(|(duration, _)| *duration)
-            .map(|(duration, _)| duration);
-        min_duration.map(move |min_duration| {
-            (
-                min_duration,
-                self.get_transitions()
-                    .flatten()
-                    .filter(move |(duration, _)| *duration == min_duration)
-                    .map(|(_, transition)| transition),
-            )
-        })
-    }
-    fn get_transitions(
-        &self,
-    ) -> impl Iterator<Item = Option<(Instant, for<'a> fn(&'a mut Self))>> + use<> {
-        [
-            self.backlight_state
-                .next_timer(TIME_TO_BACKLIGHT_LOW, TIME_FROM_BACKLIGHT_LOW_TO_OFF)
-                .map(|t| {
-                    (
-                        t,
-                        (|this: &mut Self| this.backlight_state = this.backlight_state.next())
-                            as for<'a> fn(&'a mut Self),
-                    )
-                }),
-            self.led_state.next_timer(MAX_LED_ON_TIME).map(|t| {
-                (
-                    t,
-                    (|this: &mut Self| this.led_state = this.led_state.next())
-                        as for<'a> fn(&'a mut Self),
-                )
-            }),
-        ]
-        .into_iter()
+    fn dim_display_if_untouched(&mut self, start_time: Instant) {
+        if let Some(DisplayBacklightState::On { on_at }) = self.last_backlight_state
+            && on_at == start_time
+        {
+            self.last_backlight_state
+        }
     }
 }
 
@@ -309,22 +268,4 @@ pub fn output_state(
         state.last_display_state = Some(next_display_state);
         state.last_backlight_state = Some(state.backlight_state);
     }
-}
-
-/// Implementation of f32::round in no_std environment.
-pub const fn round_f32(x: f32) -> i32 {
-    if x >= 0.0 {
-        (x + 0.5) as i32
-    } else {
-        (x - 0.5) as i32
-    }
-}
-
-/// Round f32 to x decimal places.
-pub const fn round_f32_dp(x: f32, dp: u8) -> f32 {
-    if dp == 0 {
-        return round_f32(x) as f32;
-    }
-    let factor = 10u32.pow(dp as u32) as f32;
-    round_f32(x * factor) as f32 / factor
 }

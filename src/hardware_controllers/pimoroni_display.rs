@@ -95,7 +95,7 @@ impl<'a> PimoroniDisplayController<'a> {
             .display_size(DISPLAY_H, DISPLAY_W)
             // Required for pico display.
             .invert_colors(mipidsi::options::ColorInversion::Inverted)
-            // This puts button A in top left and button Y in bottom right.
+            // This puts button Y in top left and button A in bottom right.
             .orientation(Orientation::new().rotate(Rotation::Deg270))
             .init(&mut Delay)
             .unwrap();
@@ -113,12 +113,22 @@ impl<'a> PimoroniDisplayController<'a> {
             self.backlight_pwm_conf.compare_a = 0;
             self.backlight.set_config(&self.backlight_pwm_conf);
         }
+        if !self.display.is_sleeping() {
+            self.display
+                .sleep(&mut Delay)
+                .unwrap_or_else(|_| defmt::error!("Error putting display to sleep"));
+        }
     }
     pub fn turn_on_display(&mut self, percentage: Percentage) {
         let target_pwm = BACKLIGHT_PWM_TOP / 100 * percentage.0;
         if self.backlight_pwm_conf.compare_a != target_pwm {
             self.backlight_pwm_conf.compare_a = target_pwm;
             self.backlight.set_config(&self.backlight_pwm_conf);
+        }
+        if self.display.is_sleeping() {
+            self.display
+                .wake(&mut Delay)
+                .unwrap_or_else(|_| defmt::error!("Error putting display to sleep"));
         }
     }
     pub fn draw_via_framebuffer(

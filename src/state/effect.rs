@@ -1,11 +1,12 @@
 use core::ops::Mul;
 
 use crate::{
+    DisplayTimer, EnterOrProgressCalibrationMode, LEDTimer, WriteConfig,
     config_consts::TOTAL_LED_FADEOUT_STEPS,
     hardware_controllers::flash::Config,
     state::{
-        round_f32, round_f32_dp, ButtonState, CalibrationState, DisplayBacklightState, LedState,
-        ScreenShown, State,
+        ButtonState, CalibrationState, DisplayBacklightState, LedState, ScreenShown, State,
+        round_f32,
     },
     tasks::ScaleRawWeight,
 };
@@ -14,9 +15,17 @@ use effect_lite::Effect;
 use embassy_time::Instant;
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
-pub enum HardwareEvent {
+pub enum Event {
     Button(ButtonEvent),
     LoadCell(LoadCellEvent),
+    Timer(TimerEvent),
+}
+
+#[derive(Copy, Clone, Debug, defmt::Format)]
+pub enum TimerEvent {
+    FadeoutLEDs { start_time: Instant },
+    DimDisplay { start_time: Instant },
+    SleepDisplay { start_time: Instant },
 }
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
@@ -45,22 +54,31 @@ pub enum LoadCellEvent {
     CalibModeComplete,
 }
 
-impl Effect<&mut State> for HardwareEvent {
-    type Output = Option<crate::OfficeCandyWeigherEffect>;
+impl Effect<&mut State> for Event {
+    type Output = (
+        Option<WriteConfig>,
+        Option<EnterOrProgressCalibrationMode>,
+        Option<LEDTimer>,
+        Option<DisplayTimer>,
+    );
     fn resolve(self, state: &mut State) -> Self::Output {
+        let mut write_config_effect = None;
+        let mut enter_or_progress_calibration_mode_effect = None;
+        let mut led_timer_effect = None;
+        let mut display_timer_effect = None;
         debug!("About to handle message: {}", self);
         // Special case - if showing the saving settings screen, consume button events.
-        if let (ScreenShown::SavingSettings, HardwareEvent::Button(button_event)) =
+        if let (ScreenShown::SavingSettings, Event::Button(button_event)) =
             (state.screen_shown, self)
         {
             // Specifically, transition screen on X.
             if matches!(button_event, ButtonEvent::XPressed) {
                 state.screen_shown = ScreenShown::Main;
-                return None;
+                return Default::default();
             }
         }
         // Special case - if showing the calibration screen, consume button events.
-        if let (ScreenShown::Calibration(calibration_state), HardwareEvent::Button(button_event)) =
+        if let (ScreenShown::Calibration(calibration_state), Event::Button(button_event)) =
             (state.screen_shown, self)
         {
             // Specifically, transition the correct screen on X.
@@ -78,46 +96,46 @@ impl Effect<&mut State> for HardwareEvent {
                     CalibrationState::Calibrated => state.screen_shown = ScreenShown::Main,
                     _ => (),
                 }
-                return None;
+                return Default::default();
             }
         }
         // Special case - reset the backlight timer when a button is pressed, does not
         // consume the press.
-        if matches!(self, HardwareEvent::Button(_)) {
+        if matches!(self, Event::Button(_)) {
             state.backlight_state = DisplayBacklightState::On {
                 on_at: Instant::now(),
             };
         }
         match self {
-            HardwareEvent::Button(ButtonEvent::APressed) => {
+            Event::Button(ButtonEvent::APressed) => {
                 state.lolly_weight_g += 0.1;
                 state.t_l_pressed = ButtonState::On;
             }
-            HardwareEvent::Button(ButtonEvent::ARepeated) => {
+            Event::Button(ButtonEvent::ARepeated) => {
                 state.lolly_weight_g += 0.1;
             }
-            HardwareEvent::Button(ButtonEvent::AReleased) => {
+            Event::Button(ButtonEvent::AReleased) => {
                 state.t_l_pressed = ButtonState::Off;
             }
-            HardwareEvent::Button(ButtonEvent::BPressed) => {
+            Event::Button(ButtonEvent::BPressed) => {
                 state.lolly_weight_g -= 0.1;
                 state.b_l_pressed = ButtonState::On;
             }
-            HardwareEvent::Button(ButtonEvent::BRepeated) => {
+            Event::Button(ButtonEvent::BRepeated) => {
                 state.lolly_weight_g -= 0.1;
             }
-            HardwareEvent::Button(ButtonEvent::BReleased) => {
+            Event::Button(ButtonEvent::BReleased) => {
                 state.b_l_pressed = ButtonState::Off;
             }
-            HardwareEvent::Button(ButtonEvent::XPressed) => {
+            Event::Button(ButtonEvent::XPressed) => {
                 state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
                 state.t_r_pressed = ButtonState::On;
             }
-            HardwareEvent::Button(ButtonEvent::YPressed) => {
+            Event::Button(ButtonEvent::YPressed) => {
                 state.tare_weight_g = state.scale_weight_g;
                 state.b_r_pressed = ButtonState::On;
             }
-            HardwareEvent::Button(ButtonEvent::XHeld(progress)) => {
+            Event::Button(ButtonEvent::XHeld(progress)) => {
                 if round_f32(progress * 100.0) == 100 {
                     state.screen_shown = ScreenShown::SavingSettings;
                     return Some(crate::OfficeCandyWeigherEffect::WriteConfig(Config {
@@ -133,17 +151,17 @@ impl Effect<&mut State> for HardwareEvent {
                     state.t_r_pressed = ButtonState::Mid(progress)
                 }
             }
-            HardwareEvent::Button(ButtonEvent::YHeld(progress)) => {
+            Event::Button(ButtonEvent::YHeld(progress)) => {
                 if round_f32(progress * 100.0) == 100 {
-                    state.screen_shown = ScreenShown::Calibration(Default::default());
+                    state.screen_shown = ScreenShown::Calibration(CalibrationState::Loading);
                     return Some(crate::OfficeCandyWeigherEffect::EnterOrProgressCalibrationMode);
                 } else {
                     state.b_r_pressed = ButtonState::Mid(progress)
                 }
             }
-            HardwareEvent::Button(ButtonEvent::XReleased) => state.t_r_pressed = ButtonState::Off,
-            HardwareEvent::Button(ButtonEvent::YReleased) => state.b_r_pressed = ButtonState::Off,
-            HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(w)) => {
+            Event::Button(ButtonEvent::XReleased) => state.t_r_pressed = ButtonState::Off,
+            Event::Button(ButtonEvent::YReleased) => state.b_r_pressed = ButtonState::Off,
+            Event::LoadCell(LoadCellEvent::WeightUpdate(w)) => {
                 let prev_tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
                 let prev_lolly_count = round_f32(prev_tared_scale_weight_g / state.lolly_weight_g);
@@ -176,10 +194,10 @@ impl Effect<&mut State> for HardwareEvent {
                     };
                 }
             }
-            HardwareEvent::LoadCell(LoadCellEvent::CalibTareWeightUpdate(w)) => {
+            Event::LoadCell(LoadCellEvent::CalibTareWeightUpdate(w)) => {
                 state.displayed_calibration_value_raw = Some(w.get_raw());
             }
-            HardwareEvent::LoadCell(LoadCellEvent::CalibModeComplete) => {
+            Event::LoadCell(LoadCellEvent::CalibModeComplete) => {
                 state.displayed_calibration_value_raw = None;
                 state.screen_shown = ScreenShown::Main;
             }

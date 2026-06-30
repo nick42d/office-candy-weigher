@@ -5,10 +5,11 @@
 //! futures to be directly polled (which requires them to be wrapped in pin,
 //! which pin-project handles safely for us).
 use core::{
+    hint::select_unpredictable,
     pin::Pin,
     task::{Context, Poll},
 };
-use embassy_futures::select::{Either, Either3, Either4};
+use embassy_futures::select::{select_slice, Either, Either3, Either4};
 use pin_project::pin_project;
 
 #[derive(Debug)]
@@ -95,6 +96,62 @@ impl PollFirst4 {
             PollFirst4::C => *self = PollFirst4::D,
             PollFirst4::D => *self = PollFirst4::A,
         }
+    }
+}
+
+struct RoundRobinSelectSlice<'a, Fut> {
+    inner: Pin<&'a mut [Fut]>,
+    poll_next_idx: usize,
+}
+
+/// Round robin select over a slice of Unpin futures, initially starting at a
+/// random value.
+pub fn unbiased_select_slice<'a, Fut: Future>(
+    mut rng: impl rand::Rng,
+    slice: Pin<&'a mut [Fut]>,
+) -> RoundRobinSelectSlice<'a, Fut> {
+    let seed = rng.gen_range(0..slice.len());
+    RoundRobinSelectSlice {
+        poll_next_idx: seed,
+        inner: slice,
+    }
+}
+
+impl<'a, Fut: Future> Future for RoundRobinSelectSlice<'a, Fut> {
+    type Output = (Fut::Output, usize);
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[inline(always)]
+        fn pin_iter<T>(slice: Pin<&mut [T]>) -> impl Iterator<Item = Pin<&mut T>> {
+            // Safety:
+            // This is from ebassy_futures::select::select_slice which refers to
+            //   https://users.rust-lang.org/t/working-with-pinned-slices-are-there-any-structurally-pinning-vec-like-collection-types/50634/2
+            unsafe {
+                slice
+                    .get_unchecked_mut()
+                    .iter_mut()
+                    .map(|v| Pin::new_unchecked(v))
+            }
+        }
+        let poll_next_idx = self.poll_next_idx;
+        self.poll_next_idx = (self.poll_next_idx + 1) % self.inner.len();
+        for (i, fut) in pin_iter(self.inner.as_mut())
+            .skip(poll_next_idx)
+            .enumerate()
+        {
+            if let Poll::Ready(res) = fut.poll(cx) {
+                return Poll::Ready((res, i));
+            }
+        }
+        for (i, fut) in pin_iter(self.inner.as_mut())
+            .take(poll_next_idx)
+            .enumerate()
+        {
+            if let Poll::Ready(res) = fut.poll(cx) {
+                return Poll::Ready((res, i));
+            }
+        }
+        Poll::Pending
     }
 }
 

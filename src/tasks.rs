@@ -2,15 +2,16 @@ use core::cell::RefCell;
 use core::num::NonZeroU32;
 
 use crate::config_consts::{
-    scale_raw_1g_step, BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD,
-    BUTTON_REPEAT_THRESHOLD, LOW_BACKLIGHT_PERCENTAGE,
+    BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD, BUTTON_REPEAT_THRESHOLD,
+    LOW_BACKLIGHT_PERCENTAGE, scale_raw_1g_step,
 };
-use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::hardware_controllers::PimoroniDisplayController;
+use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::state::effect::{ButtonEvent, LoadCellEvent};
-use crate::{candy_weigher_ui, HardwareEvent, Irqs, CORE1_SIGNAL, MESSAGE_CHANNEL_SIZE};
+use crate::{CORE1_SIGNAL, Event, Irqs, MESSAGE_CHANNEL_SIZE, candy_weigher_ui};
 use defmt::info;
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
+use embassy_rp::Peri;
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::{
     DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
@@ -18,9 +19,8 @@ use embassy_rp::peripherals::{
 };
 use embassy_rp::pio::Pio;
 use embassy_rp::spi::{self, Spi};
-use embassy_rp::Peri;
-use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::blocking_mutex::raw::{RawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
@@ -63,14 +63,14 @@ pub async fn display_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_a_manager(
     pin12: Peri<'static, PIN_12>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
     manage_repeating_button(
         button_a,
-        HardwareEvent::Button(ButtonEvent::APressed),
-        HardwareEvent::Button(ButtonEvent::ARepeated),
-        HardwareEvent::Button(ButtonEvent::AReleased),
+        Event::Button(ButtonEvent::APressed),
+        Event::Button(ButtonEvent::ARepeated),
+        Event::Button(ButtonEvent::AReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_REPEAT_THRESHOLD,
         tx,
@@ -80,14 +80,14 @@ pub async fn pico_display_button_a_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_b_manager(
     pin13: Peri<'static, PIN_13>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
     manage_repeating_button(
         button_b,
-        HardwareEvent::Button(ButtonEvent::BPressed),
-        HardwareEvent::Button(ButtonEvent::BRepeated),
-        HardwareEvent::Button(ButtonEvent::BReleased),
+        Event::Button(ButtonEvent::BPressed),
+        Event::Button(ButtonEvent::BRepeated),
+        Event::Button(ButtonEvent::BReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_REPEAT_THRESHOLD,
         tx,
@@ -97,14 +97,14 @@ pub async fn pico_display_button_b_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_x_manager(
     pin14: Peri<'static, PIN_14>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_x = Input::new(pin14, Pull::Up);
     manage_holdable_button(
         button_x,
-        HardwareEvent::Button(ButtonEvent::XPressed),
-        |progress| HardwareEvent::Button(ButtonEvent::XHeld(progress)),
-        HardwareEvent::Button(ButtonEvent::XReleased),
+        Event::Button(ButtonEvent::XPressed),
+        |progress| Event::Button(ButtonEvent::XHeld(progress)),
+        Event::Button(ButtonEvent::XReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
@@ -114,14 +114,14 @@ pub async fn pico_display_button_x_manager(
 #[embassy_executor::task]
 pub async fn pico_display_button_y_manager(
     pin15: Peri<'static, PIN_15>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_y = Input::new(pin15, Pull::Up);
     manage_holdable_button(
         button_y,
-        HardwareEvent::Button(ButtonEvent::YPressed),
-        |progress| HardwareEvent::Button(ButtonEvent::YHeld(progress)),
-        HardwareEvent::Button(ButtonEvent::YReleased),
+        Event::Button(ButtonEvent::YPressed),
+        |progress| Event::Button(ButtonEvent::YHeld(progress)),
+        Event::Button(ButtonEvent::YReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
         BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
@@ -212,7 +212,7 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
 #[cfg(feature = "software-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_simulated(
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     const TEST_WEIGHT_DATA: &[(f32, Duration)] = &[
         (00000.0, Duration::from_secs(5)),
@@ -230,7 +230,7 @@ pub async fn hx710_load_cell_manager_simulated(
         (2500000.0, Duration::from_secs(5)),
     ];
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
-        tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+        tx.send(Event::LoadCell(LoadCellEvent::WeightUpdate(
             ScaleRawWeight(*weight),
         )))
         .await;
@@ -244,7 +244,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
     pin26: Peri<'static, embassy_rp::peripherals::PIN_26>,
     pin27: Peri<'static, embassy_rp::peripherals::PIN_27>,
     pio0: Peri<'static, embassy_rp::peripherals::PIO0>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     use crate::Irqs;
 
@@ -269,7 +269,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
             Direction::Clockwise => base_weight += 25000.0,
             Direction::CounterClockwise => base_weight -= 25000.0,
         }
-        tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+        tx.send(Event::LoadCell(LoadCellEvent::WeightUpdate(
             ScaleRawWeight(base_weight),
         )))
         .await;
@@ -292,7 +292,7 @@ pub async fn hx710_load_cell_manager(
     pin10: Peri<'static, PIN_10>,
     pin11: Peri<'static, PIN_11>,
     pio1: Peri<'static, PIO1>,
-    tx: Sender<'static, ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
     calibration_mode_signal: &'static Signal<ThreadModeRawMutex, ()>,
 ) {
     let Pio {
@@ -324,7 +324,7 @@ pub async fn hx710_load_cell_manager(
             // - Wait for signal.
             // - Send calibration complete message.
             calibration_mode_signal.reset();
-            tx.send(HardwareEvent::LoadCell(LoadCellEvent::EnteredCalibMode))
+            tx.send(Event::LoadCell(LoadCellEvent::EnteredCalibMode))
                 .await;
             calibration_mode_signal.wait().await;
             calibration_mode_signal.reset();
@@ -335,11 +335,9 @@ pub async fn hx710_load_cell_manager(
                 let raw_val = load_cell.read().await;
                 ma_100[i % 100] = raw_val as f32;
                 if i >= 99 {
-                    tx.send(HardwareEvent::LoadCell(
-                        LoadCellEvent::CalibTareWeightUpdate(ScaleRawWeight(
-                            ma_100.iter().sum::<f32>() / 100.0,
-                        )),
-                    ))
+                    tx.send(Event::LoadCell(LoadCellEvent::CalibTareWeightUpdate(
+                        ScaleRawWeight(ma_100.iter().sum::<f32>() / 100.0),
+                    )))
                     .await
                 }
                 // Small delay to prevent flooding logs, though PIO will
@@ -348,10 +346,8 @@ pub async fn hx710_load_cell_manager(
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
                 Timer::after(Duration::from_millis(10)).await;
             }
-            tx.send(HardwareEvent::LoadCell(
-                LoadCellEvent::CalibTareWeightModeComplete,
-            ))
-            .await;
+            tx.send(Event::LoadCell(LoadCellEvent::CalibTareWeightModeComplete))
+                .await;
             calibration_mode_signal.wait().await;
             calibration_mode_signal.reset();
 
@@ -361,11 +357,9 @@ pub async fn hx710_load_cell_manager(
                 let raw_val = load_cell.read().await;
                 ma_100[i % 100] = raw_val as f32;
                 if i >= 99 {
-                    tx.send(HardwareEvent::LoadCell(
-                        LoadCellEvent::Calib50gWeightUpdate(ScaleRawWeight(
-                            ma_100.iter().sum::<f32>() / 100.0,
-                        )),
-                    ))
+                    tx.send(Event::LoadCell(LoadCellEvent::Calib50gWeightUpdate(
+                        ScaleRawWeight(ma_100.iter().sum::<f32>() / 100.0),
+                    )))
                     .await
                 }
                 // Small delay to prevent flooding logs, though PIO will
@@ -374,7 +368,7 @@ pub async fn hx710_load_cell_manager(
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
                 Timer::after(Duration::from_millis(10)).await;
             }
-            tx.send(HardwareEvent::LoadCell(LoadCellEvent::CalibModeComplete))
+            tx.send(Event::LoadCell(LoadCellEvent::CalibModeComplete))
                 .await;
             calibration_mode_signal.wait().await;
             calibration_mode_signal.reset();
@@ -385,14 +379,14 @@ pub async fn hx710_load_cell_manager(
             let next_ema_weight_raw =
                 (raw_val as f32 * EMA_FILTER_ALPHA) + (*ema_weight_raw * (1.0 - EMA_FILTER_ALPHA));
             if (next_ema_weight_raw - *ema_weight_raw).abs() > MIN_RAW_CHANGE_TOLERANCE {
-                tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+                tx.send(Event::LoadCell(LoadCellEvent::WeightUpdate(
                     ScaleRawWeight(next_ema_weight_raw),
                 )))
                 .await;
             }
             *ema_weight_raw = next_ema_weight_raw;
         } else {
-            tx.send(HardwareEvent::LoadCell(LoadCellEvent::WeightUpdate(
+            tx.send(Event::LoadCell(LoadCellEvent::WeightUpdate(
                 ScaleRawWeight(raw_val as f32),
             )))
             .await;

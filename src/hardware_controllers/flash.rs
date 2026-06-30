@@ -1,16 +1,16 @@
 use crate::{
-    config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
-    state::{effect::HardwareEvent, round_f32},
     Irqs, MESSAGE_CHANNEL_SIZE,
+    config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
+    state::effect::Event,
+    utils::round_f32,
 };
 use defmt::{error, info};
 use embassy_rp::{
-    flash::{Async, Flash, ERASE_SIZE, PAGE_SIZE, READ_SIZE},
-    peripherals::{DMA_CH1, FLASH},
     Peri,
+    flash::{Async, ERASE_SIZE, Flash, PAGE_SIZE, READ_SIZE},
+    peripherals::{DMA_CH1, FLASH},
 };
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::Sender};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 const PICO_FLASH_SIZE_BYTES: usize = 2 * 1024 * 1024;
 

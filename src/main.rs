@@ -4,29 +4,33 @@
 use crate::candy_weigher_ui::DisplayState;
 use crate::config_consts::OfficeCandyWeigherPeripherals;
 use crate::hardware_controllers::{
-    flash::Config, FlashController, LoadCellController, PimoroniDisplayRgbLedController,
+    FlashController, LoadCellController, PimoroniDisplayRgbLedController, flash::Config,
 };
-use crate::round_robin_select::PollFirst2;
-use crate::state::effect::HardwareEvent;
-use crate::state::{output_state, DisplayBacklightState, State};
+use crate::round_robin_select::{
+    PollFirst2, PollFirst3, round_robin_select, unbiased_select_slice,
+};
+use crate::state::effect::{Event, TimerEvent};
+use crate::state::{DisplayBacklightState, State, output_state};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
+use crate::utils::{TimerFuture, timer_future};
 use defmt::*;
 use effect_lite::{Effect, EffectExt};
 use embassy_executor::{Executor, Spawner};
-use embassy_futures::select::Either;
+use embassy_futures::select::{Either, Either3};
 use embassy_rp::bind_interrupts;
+use embassy_rp::clocks::RoscRng;
 use embassy_rp::dma;
-use embassy_rp::multicore::{spawn_core1, Stack};
+use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::PIO1;
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH1};
 use embassy_rp::pio;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use futures::FutureExt;
 use static_cell::StaticCell;
 
@@ -38,8 +42,7 @@ pub const FLASH_STORAGE_OFFSET_BYTES: u32 = 2040 * 1024;
 // STORAGE in memory.x is 8KB.
 const FLASH_STORAGE_SIZE_BYTES: u32 = 8 * 1024;
 
-static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, HardwareEvent, MESSAGE_CHANNEL_SIZE> =
-    Channel::new();
+static MESSAGE_CHANNEL: Channel<ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE> = Channel::new();
 // Give core1 (second core) it's own stack.
 static CORE1_STACK: StaticCell<Stack<4096>> = StaticCell::new();
 static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
@@ -65,6 +68,7 @@ mod hardware_controllers;
 mod round_robin_select;
 mod state;
 mod tasks;
+mod utils;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -172,53 +176,118 @@ async fn main(spawner: Spawner) {
     let rx = MESSAGE_CHANNEL.receiver();
     info!("Initial UI drawn, entering event loop");
     let mut poll_first_1 = PollFirst2::A;
+    const MAX_EFFECTS: usize = 100;
+    let mut futures_executor = heapless::Vec::<TimerFuture<Event>, 100>::new();
+    let mut rng = RoscRng;
     loop {
         // Interleave state transitions
-        let state_transitions_future = match state.get_next_transitions() {
-            Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_| f)),
-            None => futures::future::Either::Left(core::future::pending()),
-        };
+        // let state_transitions_future = match state.get_next_transitions() {
+        //     Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_|
+        // f)),     None =>
+        // futures::future::Either::Left(core::future::pending()), };
         let result = round_robin_select::round_robin_select(
             &mut poll_first_1,
             rx.receive(),
-            state_transitions_future,
+            unbiased_select_slice(&mut rng, core::pin::pin!(&mut futures_executor)),
         )
         .await;
-        match result {
-            Either::First(message) => {
-                let _: Option<()> = message
-                    .flatten_option()
-                    .provide_left(&mut state)
-                    .resolve((&mut flash_controller, &load_cell_controller));
+        let event = match result {
+            Either::First(event_from_hardware) => {
+                debug!("received event from hardware {:?}", event_from_hardware);
+                event_from_hardware
             }
-            Either::Second(transitions) => {
-                debug!("State transitioning");
-                for transition in transitions {
-                    transition(&mut state)
-                }
+            Either::Second((event_from_executor, idx)) => {
+                debug!("received event from executor {:?}", event_from_executor);
+                futures_executor.remove(idx);
+                event_from_executor
             }
+        };
+        let (e1, e2, e3, e4) = event.resolve(&mut state);
+        if let Some(e1) = e1 {
+            e1.resolve(&mut flash_controller)
+        }
+        if let Some(e2) = e2 {
+            e2.resolve(&load_cell_controller)
+        }
+        if let Some(e3) = e3 {
+            // Remove all other LED timers
+            futures_executor.retain(|fut| {
+                fut.inspect_t()
+                    .is_some_and(|t| !matches!(t, Event::Timer(TimerEvent::FadeoutLEDs { .. })))
+            });
+            let Ok(()) = futures_executor.push(e3.resolve(())) else {
+                crate::panic!("Ran out of space in futures executor");
+            };
+        }
+        if let Some(e4) = e4 {
+            // Remove all other Display timers
+            futures_executor.retain(|fut| {
+                fut.inspect_t().is_some_and(|t| {
+                    !matches!(
+                        t,
+                        Event::Timer(TimerEvent::DimDisplay { .. })
+                            | Event::Timer(TimerEvent::SleepDisplay { .. })
+                    )
+                })
+            });
+            let Ok(()) = futures_executor.push(e4.resolve(())) else {
+                crate::panic!("Ran out of space in futures executor");
+            };
         }
         output_state(&mut state, &mut display_led_controller);
     }
 }
 
-#[derive(Debug)]
-pub enum OfficeCandyWeigherEffect {
-    WriteConfig(Config),
-    EnterOrProgressCalibrationMode,
+#[derive(Debug, defmt::Format)]
+pub struct WriteConfig(Config);
+#[derive(Debug, defmt::Format)]
+pub struct EnterOrProgressCalibrationMode;
+#[derive(Debug, defmt::Format)]
+pub enum DisplayTimer {
+    SpawnDimTimer {
+        start_time: Instant,
+        in_dur: Duration,
+    },
+    SpawnSleepTimer {
+        start_time: Instant,
+        in_dur: Duration,
+    },
+}
+#[derive(Debug, defmt::Format)]
+struct LEDTimer {
+    start_time: Instant,
+    in_dur: Duration,
 }
 
-impl<'a> Effect<(&mut FlashController<'a>, &LoadCellController)> for OfficeCandyWeigherEffect {
+impl<'a> Effect<&mut FlashController<'a>> for WriteConfig {
     type Output = ();
-    fn resolve(self, dependency: (&mut FlashController<'a>, &LoadCellController)) -> Self::Output {
-        let (flash_controller, hx710_controller) = dependency;
+    fn resolve(self, flash_controller: &mut FlashController<'a>) -> Self::Output {
+        flash_controller.write::<_, 4096>(&self.0);
+    }
+}
+impl Effect<&LoadCellController> for EnterOrProgressCalibrationMode {
+    type Output = ();
+    fn resolve(self, hx710_controller: &LoadCellController) -> Self::Output {
+        hx710_controller.enter_or_progress_calibration_mode()
+    }
+}
+impl Effect<()> for DisplayTimer {
+    type Output = TimerFuture<Event>;
+    fn resolve(self, _: ()) -> Self::Output {
         match self {
-            OfficeCandyWeigherEffect::WriteConfig(config) => {
-                flash_controller.write::<_, 4096>(&config);
+            DisplayTimer::SpawnDimTimer { start_time, in_dur } => {
+                timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
             }
-            OfficeCandyWeigherEffect::EnterOrProgressCalibrationMode => {
-                hx710_controller.enter_or_progress_calibration_mode()
+            DisplayTimer::SpawnSleepTimer { start_time, in_dur } => {
+                timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
             }
         }
+    }
+}
+impl Effect<()> for LEDTimer {
+    type Output = TimerFuture<Event>;
+    fn resolve(self, _: ()) -> Self::Output {
+        let LEDTimer { start_time, in_dur } = self;
+        timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
     }
 }

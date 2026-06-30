@@ -2,11 +2,11 @@ use crate::config_consts::{BUTTON_SEMICIRCLE_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMI
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
 use crate::state::CalibrationState;
 use core::fmt::Write;
-use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle};
+use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle, StyledDrawable};
 use embedded_graphics::text::Text;
 
 #[derive(PartialEq, Clone)]
@@ -318,4 +318,75 @@ pub fn draw_main_screen<D>(
     text_lolly_weight.draw(display).unwrap();
     text_lolly_count.draw(display).unwrap();
     text_lolly_change.draw(display).unwrap();
+}
+
+enum ButtonPos {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+enum ButtonStatus {
+    Off,
+    On,
+    Held { percentage: f32 },
+}
+
+fn draw_corner_button<D>(pos: ButtonPos, text: char, status: ButtonStatus, display: &mut D)
+where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    let circle_style = PrimitiveStyle::with_fill(BUTTON_SEMICIRCLE_COLOUR);
+    let outline_style = PrimitiveStyle::with_stroke(BUTTON_SEMICIRCLE_COLOUR, 2);
+    let button_tooltip_font = FONT_10X20;
+    let _button_tooltip_font_w = button_tooltip_font.character_size.width;
+    let _button_tooltip_font_h = button_tooltip_font.character_size.height;
+    let button_text_style = MonoTextStyle::new(&button_tooltip_font, BUTTON_TOOLTIP_COLOUR);
+    let char_pos = match pos {
+        // 11 is a magic number that makes the char render in a good spot...
+        ButtonPos::TopLeft => Point::new(1, 11),
+        ButtonPos::TopRight =>
+        // 13 is a magic number that makes the char render in a good spot...
+        {
+            Point::new(
+                (DISPLAY_W as u32)
+                    .saturating_sub(1)
+                    .try_into()
+                    .unwrap_or_default(),
+                13,
+            )
+        }
+        ButtonPos::BottomLeft => Point::new(1, DISPLAY_H as i32 - 1),
+        ButtonPos::BottomRight => Point::new(
+            (DISPLAY_W as u32)
+                .saturating_sub(1)
+                .try_into()
+                .unwrap_or_default(),
+            DISPLAY_H as i32 - 2,
+        ),
+    };
+    let circle_pos = match pos {
+        ButtonPos::TopLeft => Point::new(0, 0),
+        ButtonPos::TopRight => Point::new(DISPLAY_W as i32, 0),
+        ButtonPos::BottomLeft => Point::new(0, DISPLAY_H as i32),
+        ButtonPos::BottomRight => Point::new(DISPLAY_W as i32, DISPLAY_H as i32),
+    };
+    match status {
+        ButtonStatus::Off => Circle::with_center(circle_pos, SEMICIRCLE_DIAMETER)
+            .into_styled(outline_style)
+            .draw(display)
+            .unwrap(),
+        ButtonStatus::On => todo!(),
+        ButtonStatus::Held { percentage } => todo!(),
+    }
+    Text::with_alignment(
+        text,
+        char_pos,
+        button_text_style,
+        embedded_graphics::text::Alignment::Right,
+    )
+    .draw(display)
+    .unwrap();
 }
