@@ -102,9 +102,12 @@ where
             .draw(display)
             .unwrap();
         }
-        CalibrationState::Calibrated => {
+        CalibrationState::Calibrated {
+            latest_tare_calib_value,
+            latest_50g_calib_value,
+        } => {
             Text::new(
-                "Calibration complete <Results tbc>. Press x to save.",
+                "Calibration complete <Results tbc>. Press x to apply.",
                 Point::new(10, 90),
                 text_style,
             )

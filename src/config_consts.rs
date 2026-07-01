@@ -1,15 +1,15 @@
 use core::num::NonZeroU32;
 
-use crate::hardware_controllers::pimoroni_display_leds::Percentage;
+use crate::{hardware_controllers::pimoroni_display_leds::Percentage, tasks::ScaleRawWeight};
 #[cfg(feature = "hardware-sim")]
 use embassy_rp::peripherals::{PIN_26, PIN_27, PIO0};
 use embassy_rp::{
+    Peri,
     peripherals::{
-        CORE1, DMA_CH0, DMA_CH1, FLASH, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16,
-        PIN_17, PIN_18, PIN_19, PIN_20, PIN_6, PIN_7, PIN_8, PIO1, PWM_SLICE2, PWM_SLICE3,
+        CORE1, DMA_CH0, DMA_CH1, FLASH, PIN_6, PIN_7, PIN_8, PIN_10, PIN_11, PIN_12, PIN_13,
+        PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19, PIN_20, PIO1, PWM_SLICE2, PWM_SLICE3,
         PWM_SLICE4, SPI0,
     },
-    Peri,
 };
 use embassy_time::Duration;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
@@ -26,9 +26,8 @@ pub const BUTTON_LONG_PRESS_PROGRESS_CHUNKS: NonZeroU32 = NonZeroU32::new(5).unw
 pub const BUTTON_REPEAT_THRESHOLD: Duration = Duration::from_millis(100);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
 pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = Some(Duration::from_secs(60 * 5)); // 5 mins
-
-pub const DEFAULT_SCALE_RAW_TARE: f32 = 4190.0;
-pub const DEFAULT_SCALE_RAW_50G: f32 = 39807.0;
+pub const DEFAULT_SCALE_RAW_TARE: ScaleRawWeight = ScaleRawWeight::from_raw(4190.0);
+pub const DEFAULT_SCALE_RAW_50G: ScaleRawWeight = ScaleRawWeight::from_raw(39807.0);
 
 // Raw tare value for scale - obtained via averaging raw reading with 50g
 // calibration weight, subtracting `SCALE_RAW_TARE` and dividing by 50.

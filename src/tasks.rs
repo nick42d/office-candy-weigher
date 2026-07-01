@@ -276,7 +276,7 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
     }
 }
 
-#[derive(defmt::Format, PartialEq, Debug, Copy, Clone)]
+#[derive(defmt::Format, Default, PartialEq, Debug, Copy, Clone)]
 pub struct ScaleRawWeight(f32);
 impl ScaleRawWeight {
     pub const fn to_grams(self, scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
@@ -284,6 +284,9 @@ impl ScaleRawWeight {
     }
     pub const fn get_raw(self) -> f32 {
         self.0
+    }
+    pub const fn from_raw(raw: f32) -> Self {
+        Self(raw)
     }
 }
 
@@ -319,10 +322,11 @@ pub async fn hx710_load_cell_manager(
             //   on device and press x.
             // - Wait for signal.
             // - Complete 50g calibration, progressively updating value on device.
-            // - Display final tare + 50g calibration values on screen, press x to save
-            //   settings.
+            // - Display final tare + 50g calibration values on screen, press x to continue.
             // - Wait for signal.
             // - Send calibration complete message.
+            // - Note that user needs to save settings to disk manually if they want
+            //   calibration settings to be applied.
             calibration_mode_signal.reset();
             tx.send(Event::LoadCell(LoadCellEvent::EnteredCalibMode))
                 .await;

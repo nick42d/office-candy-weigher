@@ -1,8 +1,8 @@
 use core::ops::Mul;
 
 use crate::{
-    DisplayTimer, EnterOrProgressCalibrationMode, LEDTimer, WriteConfig,
-    config_consts::TOTAL_LED_FADEOUT_STEPS,
+    EnterOrProgressCalibrationMode, StartDisplayTimer, StartLEDTimer, WriteConfig,
+    config_consts::{TIME_TO_BACKLIGHT_LOW, TOTAL_LED_FADEOUT_STEPS},
     hardware_controllers::flash::Config,
     state::{
         ButtonState, CalibrationState, DisplayBacklightState, LedState, ScreenShown, State,
@@ -54,19 +54,32 @@ pub enum LoadCellEvent {
     CalibModeComplete,
 }
 
+fn reset_display(state: &mut State) -> StartDisplayTimer {
+    let now = Instant::now();
+    state.backlight_state = DisplayBacklightState::On { on_at: now };
+    StartDisplayTimer::SpawnDimTimer {
+        start_time: now,
+        in_dur: TIME_TO_BACKLIGHT_LOW,
+    }
+}
+
 impl Effect<&mut State> for Event {
     type Output = (
         Option<WriteConfig>,
         Option<EnterOrProgressCalibrationMode>,
-        Option<LEDTimer>,
-        Option<DisplayTimer>,
+        Option<StartLEDTimer>,
+        Option<StartDisplayTimer>,
     );
     fn resolve(self, state: &mut State) -> Self::Output {
         let mut write_config_effect = None;
         let mut enter_or_progress_calibration_mode_effect = None;
         let mut led_timer_effect = None;
         let mut display_timer_effect = None;
-        debug!("About to handle message: {}", self);
+        // Special case - reset the backlight timer on any button event.
+        // Does not consume the press.
+        if matches!(self, Event::Button(_)) {
+            display_timer_effect = Some(reset_display(state));
+        }
         // Special case - if showing the saving settings screen, consume button events.
         if let (ScreenShown::SavingSettings, Event::Button(button_event)) =
             (state.screen_shown, self)
@@ -84,27 +97,44 @@ impl Effect<&mut State> for Event {
             // Specifically, transition the correct screen on X.
             if matches!(button_event, ButtonEvent::XPressed) {
                 match calibration_state {
-                    // TODO: Send an effect to weigh scale controller
                     CalibrationState::WaitingConfirmation => {
                         state.screen_shown =
-                            ScreenShown::Calibration(CalibrationState::CalibratingTare(0.0))
+                            ScreenShown::Calibration(CalibrationState::CalibratingTare {
+                                latest_tare_calib_value: ScaleRawWeight::default(),
+                            });
+                        enter_or_progress_calibration_mode_effect =
+                            Some(EnterOrProgressCalibrationMode);
                     }
-                    CalibrationState::TareCalibrated(_) => {
+                    CalibrationState::TareCalibrated {
+                        latest_tare_calib_value,
+                    } => {
                         state.screen_shown =
-                            ScreenShown::Calibration(CalibrationState::Calibrating50g(0.0))
+                            ScreenShown::Calibration(CalibrationState::Calibrating50g {
+                                latest_tare_calib_value,
+                                latest_50g_calib_value: ScaleRawWeight::default(),
+                            });
+                        enter_or_progress_calibration_mode_effect =
+                            Some(EnterOrProgressCalibrationMode);
                     }
-                    CalibrationState::Calibrated => state.screen_shown = ScreenShown::Main,
+                    CalibrationState::Calibrated {
+                        latest_tare_calib_value,
+                        latest_50g_calib_value,
+                    } => {
+                        state.scale_raw_tare = latest_tare_calib_value;
+                        state.scale_raw_50g = latest_50g_calib_value;
+                        state.screen_shown = ScreenShown::Main;
+                        enter_or_progress_calibration_mode_effect =
+                            Some(EnterOrProgressCalibrationMode);
+                    }
                     _ => (),
                 }
-                return Default::default();
             }
-        }
-        // Special case - reset the backlight timer when a button is pressed, does not
-        // consume the press.
-        if matches!(self, Event::Button(_)) {
-            state.backlight_state = DisplayBacklightState::On {
-                on_at: Instant::now(),
-            };
+            return (
+                write_config_effect,
+                enter_or_progress_calibration_mode_effect,
+                led_timer_effect,
+                display_timer_effect,
+            );
         }
         match self {
             Event::Button(ButtonEvent::APressed) => {
@@ -194,14 +224,71 @@ impl Effect<&mut State> for Event {
                     };
                 }
             }
+            Event::LoadCell(LoadCellEvent::EnteredCalibMode) => {
+                state.screen_shown = ScreenShown::Calibration(CalibrationState::Loading);
+            }
             Event::LoadCell(LoadCellEvent::CalibTareWeightUpdate(w)) => {
-                state.displayed_calibration_value_raw = Some(w.get_raw());
+                match state.screen_shown {
+                    ScreenShown::Calibration(CalibrationState::Loading) => {
+                        state.screen_shown =
+                            ScreenShown::Calibration(CalibrationState::CalibratingTare {
+                                latest_tare_calib_value: w,
+                            })
+                    }
+                    ScreenShown::Calibration(CalibrationState::CalibratingTare { .. }) => {
+                        state.screen_shown =
+                            ScreenShown::Calibration(CalibrationState::CalibratingTare {
+                                latest_tare_calib_value: w,
+                            })
+                    }
+                    _ => (),
+                };
+            }
+            Event::LoadCell(LoadCellEvent::CalibTareWeightModeComplete) => {
+                if let ScreenShown::Calibration(CalibrationState::CalibratingTare {
+                    latest_tare_calib_value,
+                }) = state.screen_shown
+                {
+                    state.screen_shown =
+                        ScreenShown::Calibration(CalibrationState::TareCalibrated {
+                            latest_tare_calib_value,
+                        })
+                };
+            }
+            Event::LoadCell(LoadCellEvent::Calib50gWeightUpdate(w)) => {
+                if let ScreenShown::Calibration(CalibrationState::Calibrating50g {
+                    latest_tare_calib_value,
+                    ..
+                }) = state.screen_shown
+                {
+                    state.screen_shown =
+                        ScreenShown::Calibration(CalibrationState::Calibrating50g {
+                            latest_tare_calib_value,
+                            latest_50g_calib_value: w,
+                        })
+                };
             }
             Event::LoadCell(LoadCellEvent::CalibModeComplete) => {
-                state.displayed_calibration_value_raw = None;
-                state.screen_shown = ScreenShown::Main;
+                if let ScreenShown::Calibration(CalibrationState::Calibrating50g {
+                    latest_tare_calib_value,
+                    latest_50g_calib_value,
+                }) = state.screen_shown
+                {
+                    state.screen_shown = ScreenShown::Calibration(CalibrationState::Calibrated {
+                        latest_tare_calib_value,
+                        latest_50g_calib_value,
+                    })
+                };
             }
+            Event::Timer(TimerEvent::FadeoutLEDs { start_time }) => todo!(),
+            Event::Timer(TimerEvent::DimDisplay { start_time }) => todo!(),
+            Event::Timer(TimerEvent::SleepDisplay { start_time }) => todo!(),
         };
-        None
+        (
+            write_config_effect,
+            enter_or_progress_calibration_mode_effect,
+            led_timer_effect,
+            display_timer_effect,
+        )
     }
 }

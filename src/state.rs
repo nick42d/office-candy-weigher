@@ -20,8 +20,8 @@ pub struct State {
     pub scale_weight_g: f32,
     pub saved_tared_scale_weight_g: f32,
     pub lolly_weight_g: f32,
-    pub scale_raw_tare: f32,
-    pub scale_raw_50g: f32,
+    pub scale_raw_tare: ScaleRawWeight,
+    pub scale_raw_50g: ScaleRawWeight,
     pub t_l_pressed: ButtonState,
     pub b_l_pressed: ButtonState,
     pub t_r_pressed: ButtonState,
@@ -48,7 +48,10 @@ pub enum CalibrationState {
         latest_tare_calib_value: ScaleRawWeight,
         latest_50g_calib_value: ScaleRawWeight,
     },
-    Calibrated,
+    Calibrated {
+        latest_tare_calib_value: ScaleRawWeight,
+        latest_50g_calib_value: ScaleRawWeight,
+    },
 }
 
 #[derive(Default, PartialEq, Copy, Clone)]

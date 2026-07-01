@@ -238,12 +238,15 @@ async fn main(spawner: Spawner) {
     }
 }
 
+#[must_use]
 #[derive(Debug, defmt::Format)]
 pub struct WriteConfig(Config);
+#[must_use]
 #[derive(Debug, defmt::Format)]
 pub struct EnterOrProgressCalibrationMode;
+#[must_use]
 #[derive(Debug, defmt::Format)]
-pub enum DisplayTimer {
+pub enum StartDisplayTimer {
     SpawnDimTimer {
         start_time: Instant,
         in_dur: Duration,
@@ -253,8 +256,9 @@ pub enum DisplayTimer {
         in_dur: Duration,
     },
 }
+#[must_use]
 #[derive(Debug, defmt::Format)]
-struct LEDTimer {
+struct StartLEDTimer {
     start_time: Instant,
     in_dur: Duration,
 }
@@ -271,23 +275,23 @@ impl Effect<&LoadCellController> for EnterOrProgressCalibrationMode {
         hx710_controller.enter_or_progress_calibration_mode()
     }
 }
-impl Effect<()> for DisplayTimer {
+impl Effect<()> for StartDisplayTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
         match self {
-            DisplayTimer::SpawnDimTimer { start_time, in_dur } => {
+            StartDisplayTimer::SpawnDimTimer { start_time, in_dur } => {
                 timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
             }
-            DisplayTimer::SpawnSleepTimer { start_time, in_dur } => {
+            StartDisplayTimer::SpawnSleepTimer { start_time, in_dur } => {
                 timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
             }
         }
     }
 }
-impl Effect<()> for LEDTimer {
+impl Effect<()> for StartLEDTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
-        let LEDTimer { start_time, in_dur } = self;
+        let StartLEDTimer { start_time, in_dur } = self;
         timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
     }
 }
