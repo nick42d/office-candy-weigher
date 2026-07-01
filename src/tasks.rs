@@ -8,6 +8,7 @@ use crate::config_consts::{
 use crate::hardware_controllers::PimoroniDisplayController;
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
 use crate::state::effect::{ButtonEvent, LoadCellEvent};
+use crate::utils::ScaleRawWeight;
 use crate::{CORE1_SIGNAL, Event, Irqs, MESSAGE_CHANNEL_SIZE, candy_weigher_ui};
 use defmt::info;
 use embassy_futures::select::{Either, select};
@@ -25,6 +26,7 @@ use embassy_sync::channel::Sender;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use hx71x_pio::{PioHX710, PioHX710Program};
+use serde::{Deserialize, Serialize};
 
 #[embassy_executor::task]
 pub async fn display_manager(
@@ -230,6 +232,8 @@ pub async fn hx710_load_cell_manager_simulated(
         (2500000.0, Duration::from_secs(5)),
     ];
     for (weight, duration) in TEST_WEIGHT_DATA.iter().cycle() {
+        use crate::utils::ScaleRawWeight;
+
         tx.send(Event::LoadCell(LoadCellEvent::WeightUpdate(
             ScaleRawWeight(*weight),
         )))
@@ -273,20 +277,6 @@ pub async fn hx710_load_cell_manager_rotary_encoder(
             ScaleRawWeight(base_weight),
         )))
         .await;
-    }
-}
-
-#[derive(defmt::Format, Default, PartialEq, Debug, Copy, Clone)]
-pub struct ScaleRawWeight(f32);
-impl ScaleRawWeight {
-    pub const fn to_grams(self, scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
-        (self.0 - scale_raw_tare) / scale_raw_1g_step(scale_raw_tare, scale_raw_50g)
-    }
-    pub const fn get_raw(self) -> f32 {
-        self.0
-    }
-    pub const fn from_raw(raw: f32) -> Self {
-        Self(raw)
     }
 }
 

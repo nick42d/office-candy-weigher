@@ -1,17 +1,16 @@
 use crate::{
-    CORE1_SIGNAL,
+    CORE1_SIGNAL, StartDimOrSleepDisplayTimer, StartLEDTimer,
     candy_weigher_ui::DisplayState,
     config_consts::{
         DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE, MAX_LED_ON_TIME,
-        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW,
+        TIME_FROM_BACKLIGHT_LOW_TO_OFF, TIME_TO_BACKLIGHT_LOW, TOTAL_LED_FADEOUT_STEPS,
     },
     hardware_controllers::pimoroni_display_leds::{Percentage, PimoroniDisplayRgbLedController},
-    tasks::ScaleRawWeight,
-    utils::round_f32,
+    utils::{ScaleRawWeight, round_f32},
 };
 use core::ops::Mul;
 use defmt::debug;
-use embassy_time::{Duration, Instant};
+use embassy_time::Instant;
 
 pub mod effect;
 
@@ -70,32 +69,48 @@ pub enum DisplayBacklightState {
 }
 
 impl DisplayBacklightState {
-    pub fn handle_transition(self, prev_on_at: Instant) -> Self {
+    pub fn handle_transition(
+        &mut self,
+        prev_on_at: Instant,
+    ) -> Option<StartDimOrSleepDisplayTimer> {
         match self {
-            DisplayBacklightState::Off => DisplayBacklightState::Off,
-            DisplayBacklightState::LowPower { on_at } => {
-                if on_at == prev_on_at {
-                    DisplayBacklightState::Off
-                } else {
-                    DisplayBacklightState::LowPower { on_at }
-                }
+            DisplayBacklightState::Off => {
+                *self = DisplayBacklightState::Off;
+                None
             }
-            DisplayBacklightState::On { on_at } => {
-                if on_at == prev_on_at {
-                    DisplayBacklightState::LowPower { on_at }
-                } else {
-                    DisplayBacklightState::On { on_at }
-                }
+            // Handle case where timer is no longer valid, ie, state was reset after timer
+            // set.
+            DisplayBacklightState::LowPower { on_at } if *on_at == prev_on_at => {
+                *self = DisplayBacklightState::Off;
+                None
             }
+            // Handle case where timer is no longer valid, ie, state was reset after timer
+            // set.
+            DisplayBacklightState::On { on_at } if *on_at == prev_on_at => {
+                *self = DisplayBacklightState::LowPower { on_at: *on_at };
+                TIME_FROM_BACKLIGHT_LOW_TO_OFF.map(|in_dur| StartDimOrSleepDisplayTimer {
+                    start_time: prev_on_at,
+                    in_dur,
+                })
+            }
+            _ => None,
+        }
+    }
+    pub fn reset(&mut self) -> StartDimOrSleepDisplayTimer {
+        let now = Instant::now();
+        *self = DisplayBacklightState::On { on_at: now };
+        StartDimOrSleepDisplayTimer {
+            start_time: now,
+            in_dur: TIME_TO_BACKLIGHT_LOW,
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Clone, Copy)]
 pub enum ButtonState {
     #[default]
     Off,
-    Mid(f32),
+    Held(f32),
     On,
 }
 
@@ -116,24 +131,33 @@ pub enum LedState {
 }
 
 impl LedState {
-    pub fn next(self, transition_start_time: Instant) -> Self {
+    pub fn handle_transition(&mut self, transition_start_time: Instant) -> Option<StartLEDTimer> {
+        core::todo!();
+        //             let max_step_length = total_animation_duration
+        //                 .checked_div(*total_steps as u32)
+        //                 .unwrap_or_default();
+        //             Some(current_step_at.saturating_add(max_step_length))
         match self {
             LedState::Off => LedState::Off,
             LedState::Red {
                 total_steps,
                 current_step,
                 current_step_at,
-            } if current_step + 1 >= total_steps => LedState::Off,
+            } if current_step + 1 >= total_steps && transition_start_time == current_step_at => {
+                LedState::Off
+            }
             LedState::Blue {
                 total_steps,
                 current_step,
                 current_step_at,
-            } if current_step + 1 >= total_steps => LedState::Off,
+            } if current_step + 1 >= total_steps && transition_start_time == current_step_at => {
+                LedState::Off
+            }
             LedState::Red {
                 total_steps,
                 current_step,
-                ..
-            } => LedState::Red {
+                current_step_at,
+            } if current_step_at == transition_start_time => LedState::Red {
                 total_steps,
                 current_step: current_step + 1,
                 current_step_at: Instant::now(),
@@ -142,33 +166,44 @@ impl LedState {
                 total_steps,
                 current_step,
                 ..
-            } => LedState::Blue {
+            } if current_step_at == transition_start_time => LedState::Blue {
                 total_steps,
                 current_step: current_step + 1,
                 current_step_at: Instant::now(),
             },
+            _ => None,
         }
     }
-    // pub fn next_timer(&self, total_animation_duration: Duration) ->
-    // Option<Instant> {     match self {
-    //         LedState::Off => None,
-    //         LedState::Red {
-    //             total_steps,
-    //             current_step_at,
-    //             ..
-    //         }
-    //         | LedState::Blue {
-    //             total_steps,
-    //             current_step_at,
-    //             ..
-    //         } => {
-    //             let max_step_length = total_animation_duration
-    //                 .checked_div(*total_steps as u32)
-    //                 .unwrap_or_default();
-    //             Some(current_step_at.saturating_add(max_step_length))
-    //         }
-    //     }
-    // }
+    pub fn set_red(&mut self) -> StartLEDTimer {
+        let now = Instant::now();
+        *self = LedState::Red {
+            total_steps: TOTAL_LED_FADEOUT_STEPS,
+            current_step: 0,
+            current_step_at: now,
+        };
+        const {
+            assert!(TOTAL_LED_FADEOUT_STEPS != 0);
+        };
+        StartLEDTimer {
+            start_time: now,
+            in_dur: MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
+        }
+    }
+    pub fn set_blue(&mut self) -> StartLEDTimer {
+        let now = Instant::now();
+        *self = LedState::Blue {
+            total_steps: TOTAL_LED_FADEOUT_STEPS,
+            current_step: 0,
+            current_step_at: now,
+        };
+        const {
+            assert!(TOTAL_LED_FADEOUT_STEPS != 0);
+        };
+        StartLEDTimer {
+            start_time: now,
+            in_dur: MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
+        }
+    }
 }
 
 impl Default for State {
@@ -213,21 +248,14 @@ impl State {
                     lolly_weight_g: self.lolly_weight_g,
                     lolly_count,
                     lolly_count_change: lolly_count as i32 - prev_lolly_count,
-                    t_l_pressed: matches!(self.t_l_pressed, ButtonState::On),
-                    t_r_pressed: matches!(self.t_r_pressed, ButtonState::On),
-                    b_l_pressed: matches!(self.b_l_pressed, ButtonState::On),
-                    b_r_pressed: matches!(self.b_r_pressed, ButtonState::On),
+                    t_l_state: self.t_l_pressed,
+                    t_r_state: self.t_r_pressed,
+                    b_l_state: self.b_l_pressed,
+                    b_r_state: self.b_r_pressed,
                 }
             }
             ScreenShown::Calibration(state) => DisplayState::CalibrationScreen(state),
             ScreenShown::SavingSettings => DisplayState::SavingSettingsScreen,
-        }
-    }
-    fn dim_display_if_untouched(&mut self, start_time: Instant) {
-        if let Some(DisplayBacklightState::On { on_at }) = self.last_backlight_state
-            && on_at == start_time
-        {
-            self.last_backlight_state
         }
     }
 }

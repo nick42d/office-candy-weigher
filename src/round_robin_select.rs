@@ -5,11 +5,10 @@
 //! futures to be directly polled (which requires them to be wrapped in pin,
 //! which pin-project handles safely for us).
 use core::{
-    hint::select_unpredictable,
     pin::Pin,
     task::{Context, Poll},
 };
-use embassy_futures::select::{select_slice, Either, Either3, Either4};
+use embassy_futures::select::{Either, Either3, Either4};
 use pin_project::pin_project;
 
 #[derive(Debug)]

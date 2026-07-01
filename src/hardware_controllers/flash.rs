@@ -2,7 +2,7 @@ use crate::{
     Irqs, MESSAGE_CHANNEL_SIZE,
     config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
     state::effect::Event,
-    utils::round_f32,
+    utils::{ScaleRawWeight, round_f32},
 };
 use defmt::{error, info};
 use embassy_rp::{
@@ -19,8 +19,8 @@ pub struct Config {
     pub tare_weight_dg: i32,
     pub lolly_weight_dg: i32,
     pub saved_tared_scale_weight: i32,
-    pub scale_raw_50g: f32,
-    pub scale_raw_tare: f32,
+    pub scale_raw_50g: ScaleRawWeight,
+    pub scale_raw_tare: ScaleRawWeight,
 }
 
 impl Default for Config {

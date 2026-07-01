@@ -2,7 +2,7 @@
 #![no_main]
 
 use crate::candy_weigher_ui::DisplayState;
-use crate::config_consts::OfficeCandyWeigherPeripherals;
+use crate::config_consts::{OfficeCandyWeigherPeripherals, assign_peripherals};
 use crate::hardware_controllers::{
     FlashController, LoadCellController, PimoroniDisplayRgbLedController, flash::Config,
 };
@@ -30,8 +30,7 @@ use embassy_rp::pio;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, Instant, Timer};
-use futures::FutureExt;
+use embassy_time::{Duration, Instant};
 use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -72,8 +71,7 @@ mod utils;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let peripherals =
-        OfficeCandyWeigherPeripherals::from_peripherals(embassy_rp::init(Default::default()));
+    let peripherals = assign_peripherals(embassy_rp::init(Default::default()));
     info!("Peripherals initialised");
 
     let mut display_led_controller = PimoroniDisplayRgbLedController::new(
@@ -223,11 +221,7 @@ async fn main(spawner: Spawner) {
             // Remove all other Display timers
             futures_executor.retain(|fut| {
                 fut.inspect_t().is_some_and(|t| {
-                    !matches!(
-                        t,
-                        Event::Timer(TimerEvent::DimDisplay { .. })
-                            | Event::Timer(TimerEvent::SleepDisplay { .. })
-                    )
+                    !matches!(t, Event::Timer(TimerEvent::DimOrSleepDisplay { .. }))
                 })
             });
             let Ok(()) = futures_executor.push(e4.resolve(())) else {
@@ -246,15 +240,9 @@ pub struct WriteConfig(Config);
 pub struct EnterOrProgressCalibrationMode;
 #[must_use]
 #[derive(Debug, defmt::Format)]
-pub enum StartDisplayTimer {
-    SpawnDimTimer {
-        start_time: Instant,
-        in_dur: Duration,
-    },
-    SpawnSleepTimer {
-        start_time: Instant,
-        in_dur: Duration,
-    },
+pub struct StartDimOrSleepDisplayTimer {
+    start_time: Instant,
+    in_dur: Duration,
 }
 #[must_use]
 #[derive(Debug, defmt::Format)]
@@ -275,17 +263,11 @@ impl Effect<&LoadCellController> for EnterOrProgressCalibrationMode {
         hx710_controller.enter_or_progress_calibration_mode()
     }
 }
-impl Effect<()> for StartDisplayTimer {
+impl Effect<()> for StartDimOrSleepDisplayTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
-        match self {
-            StartDisplayTimer::SpawnDimTimer { start_time, in_dur } => {
-                timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
-            }
-            StartDisplayTimer::SpawnSleepTimer { start_time, in_dur } => {
-                timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
-            }
-        }
+        let StartDimOrSleepDisplayTimer { start_time, in_dur } = self;
+        timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
     }
 }
 impl Effect<()> for StartLEDTimer {

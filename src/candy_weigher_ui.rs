@@ -1,12 +1,16 @@
-use crate::config_consts::{BUTTON_SEMICIRCLE_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER};
+use crate::config_consts::{
+    BUTTON_SEMICIRCLE_COLOUR, BUTTON_SEMICIRCLE_HELD_COLOUR, BUTTON_TOOLTIP_COLOUR,
+    SEMICIRCLE_DIAMETER,
+};
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
-use crate::state::CalibrationState;
+use crate::state::{ButtonState, CalibrationState};
+use crate::utils::round_f32;
 use core::fmt::Write;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{Arc, Circle, PrimitiveStyle, StyledDrawable};
+use embedded_graphics::primitives::{Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
 
 #[derive(PartialEq, Clone)]
@@ -16,10 +20,10 @@ pub enum DisplayState {
         lolly_weight_g: f32,
         lolly_count: u32,
         lolly_count_change: i32,
-        t_l_pressed: bool,
-        b_l_pressed: bool,
-        t_r_pressed: bool,
-        b_r_pressed: bool,
+        t_l_state: ButtonState,
+        b_l_state: ButtonState,
+        t_r_state: ButtonState,
+        b_r_state: ButtonState,
     },
     CalibrationScreen(CalibrationState),
     SavingSettingsScreen,
@@ -36,19 +40,19 @@ where
             lolly_weight_g,
             lolly_count,
             lolly_count_change,
-            t_l_pressed,
-            b_l_pressed,
-            t_r_pressed,
-            b_r_pressed,
+            t_l_state,
+            b_l_state,
+            t_r_state,
+            b_r_state,
         } => draw_main_screen(
             scale_weight_g,
             lolly_weight_g,
             lolly_count,
             lolly_count_change,
-            t_l_pressed,
-            b_l_pressed,
-            t_r_pressed,
-            b_r_pressed,
+            t_l_state,
+            b_l_state,
+            t_r_state,
+            b_r_state,
             display,
         ),
         DisplayState::CalibrationScreen(state) => draw_calibration_screen(state, display),
@@ -172,88 +176,15 @@ pub fn draw_main_screen<D>(
     lolly_weight_g: f32,
     lolly_count: u32,
     lolly_count_change: i32,
-    t_l_pressed: bool,
-    b_l_pressed: bool,
-    t_r_pressed: bool,
-    b_r_pressed: bool,
+    t_l_state: ButtonState,
+    b_l_state: ButtonState,
+    t_r_state: ButtonState,
+    b_r_state: ButtonState,
     display: &mut D,
 ) where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
-    let circle_style = PrimitiveStyle::with_fill(BUTTON_SEMICIRCLE_COLOUR);
-    let arc_style = PrimitiveStyle::with_stroke(BUTTON_SEMICIRCLE_COLOUR, 2);
-    let arc_t_l = Arc::with_center(Point::new(0, 0), SEMICIRCLE_DIAMETER, 0.0.deg(), 90.0.deg())
-        .into_styled(arc_style);
-    let arc_b_l = Arc::with_center(
-        Point::new(0, DISPLAY_H as i32),
-        SEMICIRCLE_DIAMETER,
-        270.0.deg(),
-        90.0.deg(),
-    )
-    .into_styled(arc_style);
-    let arc_t_r = Arc::with_center(
-        Point::new(DISPLAY_W as i32, 0),
-        SEMICIRCLE_DIAMETER,
-        90.0.deg(),
-        90.0.deg(),
-    )
-    .into_styled(arc_style);
-    let arc_b_r = Arc::with_center(
-        Point::new(DISPLAY_W as i32, DISPLAY_H as i32),
-        SEMICIRCLE_DIAMETER,
-        180.0.deg(),
-        90.0.deg(),
-    )
-    .into_styled(arc_style);
-    let circle_t_l =
-        Circle::with_center(Point::new(0, 0), SEMICIRCLE_DIAMETER).into_styled(circle_style);
-    // Experiment in half size circle
-    let circle_b_l = Circle::with_center(Point::new(0, DISPLAY_H as i32), SEMICIRCLE_DIAMETER / 2)
-        .into_styled(circle_style);
-    let circle_t_r = Circle::with_center(Point::new(DISPLAY_W as i32, 0), SEMICIRCLE_DIAMETER)
-        .into_styled(circle_style);
-    let circle_b_r = Circle::with_center(
-        Point::new(DISPLAY_W as i32, DISPLAY_H as i32),
-        SEMICIRCLE_DIAMETER,
-    )
-    .into_styled(circle_style);
-    let button_tooltip_font = FONT_10X20;
-    let _button_tooltip_font_w = button_tooltip_font.character_size.width;
-    let _button_tooltip_font_h = button_tooltip_font.character_size.height;
-    let button_text_style = MonoTextStyle::new(&button_tooltip_font, BUTTON_TOOLTIP_COLOUR);
-    let text_t_l = Text::new(
-        "+",
-        // 11 is a magic number that makes the plus render in a good spot...
-        Point::new(1, 11),
-        button_text_style,
-    );
-    let text_b_l = Text::new("-", Point::new(1, DISPLAY_H as i32 - 1), button_text_style);
-    let text_t_r = Text::with_alignment(
-        "R",
-        // 11 is a magic number that makes the R render in a good spot...
-        Point::new(
-            (DISPLAY_W as u32)
-                .saturating_sub(1)
-                .try_into()
-                .unwrap_or_default(),
-            13,
-        ),
-        button_text_style,
-        embedded_graphics::text::Alignment::Right,
-    );
-    let text_b_r = Text::with_alignment(
-        "T",
-        Point::new(
-            (DISPLAY_W as u32)
-                .saturating_sub(1)
-                .try_into()
-                .unwrap_or_default(),
-            DISPLAY_H as i32 - 2,
-        ),
-        button_text_style,
-        embedded_graphics::text::Alignment::Right,
-    );
     let weight_text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::BLUE);
     let mut scale_weight_str = heapless::String::<30>::new();
     let mut lolly_weight_str = heapless::String::<30>::new();
@@ -293,30 +224,10 @@ pub fn draw_main_screen<D>(
 
     display.clear(Rgb565::BLACK).unwrap();
 
-    arc_b_l.draw(display).unwrap();
-
-    if t_l_pressed {
-        circle_t_l.draw(display).unwrap();
-    } else {
-        arc_t_l.draw(display).unwrap();
-    };
-    if t_r_pressed {
-        circle_t_r.draw(display).unwrap();
-    } else {
-        arc_t_r.draw(display).unwrap();
-    };
-    if b_l_pressed {
-        circle_b_l.draw(display).unwrap();
-    }
-    if b_r_pressed {
-        circle_b_r.draw(display).unwrap();
-    } else {
-        arc_b_r.draw(display).unwrap();
-    };
-    text_t_l.draw(display).unwrap();
-    text_b_l.draw(display).unwrap();
-    text_t_r.draw(display).unwrap();
-    text_b_r.draw(display).unwrap();
+    draw_corner_button(ButtonPos::TopLeft, "+", t_l_state, display).unwrap();
+    draw_corner_button(ButtonPos::BottomLeft, "-", t_r_state, display).unwrap();
+    draw_corner_button(ButtonPos::TopRight, "R", b_l_state, display).unwrap();
+    draw_corner_button(ButtonPos::BottomRight, "T", b_r_state, display).unwrap();
     text_scale_weight.draw(display).unwrap();
     text_lolly_weight.draw(display).unwrap();
     text_lolly_count.draw(display).unwrap();
@@ -330,21 +241,21 @@ enum ButtonPos {
     BottomRight,
 }
 
-enum ButtonStatus {
-    Off,
-    On,
-    Held { percentage: f32 },
-}
-
-fn draw_corner_button<D>(pos: ButtonPos, text: char, status: ButtonStatus, display: &mut D)
+fn draw_corner_button<D>(
+    pos: ButtonPos,
+    text: &str,
+    status: ButtonState,
+    display: &mut D,
+) -> Result<(), D::Error>
 where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
     let circle_style = PrimitiveStyle::with_fill(BUTTON_SEMICIRCLE_COLOUR);
+    let circle_held_style = PrimitiveStyle::with_fill(BUTTON_SEMICIRCLE_HELD_COLOUR);
     let outline_style = PrimitiveStyle::with_stroke(BUTTON_SEMICIRCLE_COLOUR, 2);
     let button_tooltip_font = FONT_10X20;
-    let _button_tooltip_font_w = button_tooltip_font.character_size.width;
+    let button_tooltip_font_w = button_tooltip_font.character_size.width;
     let _button_tooltip_font_h = button_tooltip_font.character_size.height;
     let button_text_style = MonoTextStyle::new(&button_tooltip_font, BUTTON_TOOLTIP_COLOUR);
     let char_pos = match pos {
@@ -356,6 +267,7 @@ where
             Point::new(
                 (DISPLAY_W as u32)
                     .saturating_sub(1)
+                    .saturating_sub(button_tooltip_font_w)
                     .try_into()
                     .unwrap_or_default(),
                 13,
@@ -365,6 +277,7 @@ where
         ButtonPos::BottomRight => Point::new(
             (DISPLAY_W as u32)
                 .saturating_sub(1)
+                .saturating_sub(button_tooltip_font_w)
                 .try_into()
                 .unwrap_or_default(),
             DISPLAY_H as i32 - 2,
@@ -377,19 +290,32 @@ where
         ButtonPos::BottomRight => Point::new(DISPLAY_W as i32, DISPLAY_H as i32),
     };
     match status {
-        ButtonStatus::Off => Circle::with_center(circle_pos, SEMICIRCLE_DIAMETER)
+        ButtonState::Off => Circle::with_center(circle_pos, SEMICIRCLE_DIAMETER)
             .into_styled(outline_style)
-            .draw(display)
-            .unwrap(),
-        ButtonStatus::On => todo!(),
-        ButtonStatus::Held { percentage } => todo!(),
+            .draw(display)?,
+        ButtonState::On => Circle::with_center(circle_pos, SEMICIRCLE_DIAMETER)
+            .into_styled(circle_style)
+            .draw(display)?,
+        ButtonState::Held(percentage) => {
+            Circle::with_center(circle_pos, SEMICIRCLE_DIAMETER)
+                .into_styled(circle_style)
+                .draw(display)?;
+            Circle::with_center(
+                circle_pos,
+                round_f32(SEMICIRCLE_DIAMETER as f32 * percentage)
+                    .try_into()
+                    .unwrap_or_default(),
+            )
+            .into_styled(circle_held_style)
+            .draw(display)?;
+        }
     }
     Text::with_alignment(
         text,
         char_pos,
         button_text_style,
-        embedded_graphics::text::Alignment::Right,
+        embedded_graphics::text::Alignment::Left,
     )
-    .draw(display)
-    .unwrap();
+    .draw(display)?;
+    Ok(())
 }

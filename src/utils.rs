@@ -1,5 +1,27 @@
 use core::{pin::Pin, task::Poll};
 use pin_project::pin_project;
+use serde::{Deserialize, Serialize};
+
+use crate::config_consts::scale_raw_1g_step;
+
+/// Represents a raw adc value from the hx710.
+#[derive(defmt::Format, Deserialize, Serialize, Default, PartialEq, Debug, Copy, Clone)]
+pub struct ScaleRawWeight(pub f32);
+impl ScaleRawWeight {
+    pub const fn to_grams(
+        self,
+        scale_raw_tare: ScaleRawWeight,
+        scale_raw_50g: ScaleRawWeight,
+    ) -> f32 {
+        (self.0 - scale_raw_tare.0) / scale_raw_1g_step(scale_raw_tare.0, scale_raw_50g.0)
+    }
+    pub const fn get_raw(self) -> f32 {
+        self.0
+    }
+    pub const fn from_raw(raw: f32) -> Self {
+        Self(raw)
+    }
+}
 
 /// Implementation of f32::round in no_std environment.
 pub const fn round_f32(x: f32) -> i32 {
@@ -12,9 +34,6 @@ pub const fn round_f32(x: f32) -> i32 {
 
 /// Round f32 to x decimal places.
 pub const fn round_f32_dp(x: f32, dp: u8) -> f32 {
-    if dp == 0 {
-        return round_f32(x) as f32;
-    }
     let factor = 10u32.pow(dp as u32) as f32;
     round_f32(x * factor) as f32 / factor
 }

@@ -1,6 +1,6 @@
 use core::num::NonZeroU32;
 
-use crate::{hardware_controllers::pimoroni_display_leds::Percentage, tasks::ScaleRawWeight};
+use crate::{hardware_controllers::pimoroni_display_leds::Percentage, utils::ScaleRawWeight};
 #[cfg(feature = "hardware-sim")]
 use embassy_rp::peripherals::{PIN_26, PIN_27, PIO0};
 use embassy_rp::{
@@ -12,13 +12,17 @@ use embassy_rp::{
     },
 };
 use embassy_time::Duration;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::{RgbColor, WebColors},
+};
 
 pub const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
 pub const TOTAL_LED_FADEOUT_STEPS: u16 = 8;
 pub const MAX_LED_ON_TIME: Duration = Duration::from_millis(500);
 pub const BUTTON_TOOLTIP_COLOUR: Rgb565 = Rgb565::GREEN;
 pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
+pub const BUTTON_SEMICIRCLE_HELD_COLOUR: Rgb565 = Rgb565::CSS_BEIGE;
 pub const SEMICIRCLE_DIAMETER: u32 = 44;
 pub const LOW_BACKLIGHT_PERCENTAGE: Percentage = Percentage(20);
 pub const BUTTON_LONG_PRESS_THRESHOLD: Duration = Duration::from_millis(500);
@@ -47,6 +51,8 @@ pub struct OfficeCandyWeigherPeripherals {
     pub core_1: Peri<'static, CORE1>,
     pub display_manager_spi: Peri<'static, SPI0>,
     pub hx710_pio: Peri<'static, PIO1>,
+    #[cfg(feature = "hardware-sim")]
+    pub rotary_encoder_pio: Peri<'static, PIO0>,
 
     pub display_led_controller_r_pin: Peri<'static, PIN_6>,
     pub display_led_controller_g_pin: Peri<'static, PIN_7>,
@@ -62,49 +68,44 @@ pub struct OfficeCandyWeigherPeripherals {
     pub display_manager_spi_clk_pin: Peri<'static, PIN_18>,
     pub display_manager_spi_mosi_pin: Peri<'static, PIN_19>,
     pub display_manager_backlight_pin: Peri<'static, PIN_20>,
-
-    #[cfg(feature = "hardware-sim")]
-    pub rotary_encoder_pio: Peri<'static, PIO0>,
     #[cfg(feature = "hardware-sim")]
     pub rotary_encoder_sclk_pin: Peri<'static, PIN_26>,
     #[cfg(feature = "hardware-sim")]
     pub rotary_encoder_dout_pin: Peri<'static, PIN_27>,
 }
 
-impl OfficeCandyWeigherPeripherals {
-    pub const fn from_peripherals(
-        peripherals: embassy_rp::Peripherals,
-    ) -> OfficeCandyWeigherPeripherals {
-        OfficeCandyWeigherPeripherals {
-            display_led_controller_rg_pwm_slice: peripherals.PWM_SLICE3,
-            display_led_controller_b_pwm_slice: peripherals.PWM_SLICE4,
-            display_led_controller_r_pin: peripherals.PIN_6,
-            display_led_controller_g_pin: peripherals.PIN_7,
-            display_led_controller_b_pin: peripherals.PIN_8,
-            flash: peripherals.FLASH,
-            flash_dma: peripherals.DMA_CH1,
-            core_1: peripherals.CORE1,
-            display_manager_spi: peripherals.SPI0,
-            display_manager_spi_clk_pin: peripherals.PIN_18,
-            display_manager_spi_mosi_pin: peripherals.PIN_19,
-            display_manager_dcx_pin: peripherals.PIN_16,
-            display_manager_spi_cs_pin: peripherals.PIN_17,
-            display_manager_backlight_pin: peripherals.PIN_20,
-            display_manager_pwm_slice: peripherals.PWM_SLICE2,
-            display_manager_dma: peripherals.DMA_CH0,
-            button_a_pin: peripherals.PIN_12,
-            button_b_pin: peripherals.PIN_13,
-            button_x_pin: peripherals.PIN_14,
-            button_y_pin: peripherals.PIN_15,
-            hx710_pio: peripherals.PIO1,
-            hx710_sclk_pin: peripherals.PIN_10,
-            hx710_dout_pin: peripherals.PIN_11,
-            #[cfg(feature = "hardware-sim")]
-            rotary_encoder_pio: peripherals.PIO0,
-            #[cfg(feature = "hardware-sim")]
-            rotary_encoder_sclk_pin: peripherals.PIN_26,
-            #[cfg(feature = "hardware-sim")]
-            rotary_encoder_dout_pin: peripherals.PIN_27,
-        }
+pub const fn assign_peripherals(
+    peripherals: embassy_rp::Peripherals,
+) -> OfficeCandyWeigherPeripherals {
+    OfficeCandyWeigherPeripherals {
+        display_led_controller_rg_pwm_slice: peripherals.PWM_SLICE3,
+        display_led_controller_b_pwm_slice: peripherals.PWM_SLICE4,
+        display_led_controller_r_pin: peripherals.PIN_6,
+        display_led_controller_g_pin: peripherals.PIN_7,
+        display_led_controller_b_pin: peripherals.PIN_8,
+        flash: peripherals.FLASH,
+        flash_dma: peripherals.DMA_CH1,
+        core_1: peripherals.CORE1,
+        display_manager_spi: peripherals.SPI0,
+        display_manager_spi_clk_pin: peripherals.PIN_18,
+        display_manager_spi_mosi_pin: peripherals.PIN_19,
+        display_manager_dcx_pin: peripherals.PIN_16,
+        display_manager_spi_cs_pin: peripherals.PIN_17,
+        display_manager_backlight_pin: peripherals.PIN_20,
+        display_manager_pwm_slice: peripherals.PWM_SLICE2,
+        display_manager_dma: peripherals.DMA_CH0,
+        button_a_pin: peripherals.PIN_12,
+        button_b_pin: peripherals.PIN_13,
+        button_x_pin: peripherals.PIN_14,
+        button_y_pin: peripherals.PIN_15,
+        hx710_pio: peripherals.PIO1,
+        hx710_sclk_pin: peripherals.PIN_10,
+        hx710_dout_pin: peripherals.PIN_11,
+        #[cfg(feature = "hardware-sim")]
+        rotary_encoder_pio: peripherals.PIO0,
+        #[cfg(feature = "hardware-sim")]
+        rotary_encoder_sclk_pin: peripherals.PIN_26,
+        #[cfg(feature = "hardware-sim")]
+        rotary_encoder_dout_pin: peripherals.PIN_27,
     }
 }
