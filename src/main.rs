@@ -6,9 +6,7 @@ use crate::config_consts::assign_peripherals;
 use crate::hardware_controllers::{
     FlashController, LoadCellController, PimoroniDisplayRgbLedController, flash::Config,
 };
-use crate::round_robin_select::{
-    PollFirst2, unbiased_select_slice,
-};
+use crate::round_robin_select::{PollFirst2, unbiased_select_slice};
 use crate::state::effect::{Event, TimerEvent};
 use crate::state::{DisplayBacklightState, State, output_state};
 use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
