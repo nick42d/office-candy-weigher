@@ -98,7 +98,7 @@ impl PollFirst4 {
     }
 }
 
-struct RoundRobinSelectSlice<'a, Fut> {
+pub struct RoundRobinSelectSlice<'a, Fut> {
     inner: Pin<&'a mut [Fut]>,
     poll_next_idx: usize,
 }

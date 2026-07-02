@@ -175,7 +175,7 @@ async fn main(spawner: Spawner) {
     info!("Initial UI drawn, entering event loop");
     let mut poll_first_1 = PollFirst2::A;
     const MAX_EFFECTS: usize = 100;
-    let mut futures_executor = heapless::Vec::<TimerFuture<Event>, 100>::new();
+    let mut futures_executor = heapless::Vec::<TimerFuture<Event>, MAX_EFFECTS>::new();
     let mut rng = RoscRng;
     loop {
         // Interleave state transitions
