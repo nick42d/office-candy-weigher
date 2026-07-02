@@ -2,12 +2,12 @@
 #![no_main]
 
 use crate::candy_weigher_ui::DisplayState;
-use crate::config_consts::{OfficeCandyWeigherPeripherals, assign_peripherals};
+use crate::config_consts::assign_peripherals;
 use crate::hardware_controllers::{
     FlashController, LoadCellController, PimoroniDisplayRgbLedController, flash::Config,
 };
 use crate::round_robin_select::{
-    PollFirst2, PollFirst3, round_robin_select, unbiased_select_slice,
+    PollFirst2, unbiased_select_slice,
 };
 use crate::state::effect::{Event, TimerEvent};
 use crate::state::{DisplayBacklightState, State, output_state};
@@ -17,9 +17,9 @@ use crate::tasks::{
 };
 use crate::utils::{TimerFuture, timer_future_at, timer_future_in};
 use defmt::*;
-use effect_lite::{Effect, EffectExt};
+use effect_lite::Effect;
 use embassy_executor::{Executor, Spawner};
-use embassy_futures::select::{Either, Either3};
+use embassy_futures::select::Either;
 use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::dma;

@@ -3,7 +3,7 @@ use core::num::NonZeroU32;
 
 use crate::config_consts::{
     BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD, BUTTON_REPEAT_THRESHOLD,
-    LOW_BACKLIGHT_PERCENTAGE, scale_raw_1g_step,
+    LOW_BACKLIGHT_PERCENTAGE,
 };
 use crate::hardware_controllers::PimoroniDisplayController;
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
@@ -26,7 +26,6 @@ use embassy_sync::channel::Sender;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use hx71x_pio::{PioHX710, PioHX710Program};
-use serde::{Deserialize, Serialize};
 
 #[embassy_executor::task]
 pub async fn display_manager(

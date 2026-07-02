@@ -1,7 +1,6 @@
 use crate::{
-    Irqs, MESSAGE_CHANNEL_SIZE,
+    Irqs,
     config_consts::{DEFAULT_LOLLY_WEIGHT, DEFAULT_SCALE_RAW_50G, DEFAULT_SCALE_RAW_TARE},
-    state::effect::Event,
     utils::{ScaleRawWeight, round_f32},
 };
 use defmt::{error, info};
