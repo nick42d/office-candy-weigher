@@ -121,57 +121,83 @@ pub enum LedState {
     Red {
         total_steps: u16,
         current_step: u16,
-        current_step_at: Instant,
+        initially_on_at: Instant,
     },
     Blue {
         total_steps: u16,
         current_step: u16,
-        current_step_at: Instant,
+        initially_on_at: Instant,
     },
 }
 
 impl LedState {
-    pub fn handle_transition(&mut self, transition_start_time: Instant) -> Option<StartLEDTimer> {
-        core::todo!();
-        //             let max_step_length = total_animation_duration
-        //                 .checked_div(*total_steps as u32)
-        //                 .unwrap_or_default();
-        //             Some(current_step_at.saturating_add(max_step_length))
+    pub fn handle_transition(&mut self, timer_initially_on_at: Instant) -> Option<StartLEDTimer> {
+        const {
+            assert!(TOTAL_LED_FADEOUT_STEPS != 0);
+        };
+        let step_dur = MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32;
         match self {
-            LedState::Off => LedState::Off,
-            LedState::Red {
-                total_steps,
-                current_step,
-                current_step_at,
-            } if current_step + 1 >= total_steps && transition_start_time == current_step_at => {
-                LedState::Off
+            LedState::Off => {
+                *self = LedState::Off;
+                None
             }
-            LedState::Blue {
-                total_steps,
-                current_step,
-                current_step_at,
-            } if current_step + 1 >= total_steps && transition_start_time == current_step_at => {
-                LedState::Off
-            }
+            // Case: received a message from an outdated timer
             LedState::Red {
-                total_steps,
-                current_step,
-                current_step_at,
-            } if current_step_at == transition_start_time => LedState::Red {
-                total_steps,
-                current_step: current_step + 1,
-                current_step_at: Instant::now(),
-            },
-            LedState::Blue {
+                initially_on_at, ..
+            }
+            | LedState::Blue {
+                initially_on_at, ..
+            } if *initially_on_at != timer_initially_on_at => None,
+            // Case: last step of transition
+            LedState::Red {
                 total_steps,
                 current_step,
                 ..
-            } if current_step_at == transition_start_time => LedState::Blue {
+            }
+            | LedState::Blue {
                 total_steps,
-                current_step: current_step + 1,
-                current_step_at: Instant::now(),
-            },
-            _ => None,
+                current_step,
+                ..
+            } if *current_step + 1 >= *total_steps => {
+                *self = LedState::Off;
+                None
+            }
+            LedState::Red {
+                total_steps,
+                current_step,
+                initially_on_at,
+            } => {
+                let total_steps = *total_steps;
+                let current_step = *current_step + 1;
+                let initially_on_at = *initially_on_at;
+                *self = LedState::Red {
+                    total_steps,
+                    current_step,
+                    initially_on_at,
+                };
+                Some(StartLEDTimer {
+                    start_time: initially_on_at,
+                    next_at: initially_on_at + current_step as u32 * step_dur,
+                })
+            }
+            LedState::Blue {
+                total_steps,
+                current_step,
+                initially_on_at,
+            } => {
+                let total_steps = *total_steps;
+                let current_step = *current_step + 1;
+                let initially_on_at = *initially_on_at;
+                *self = LedState::Blue {
+                    total_steps,
+                    current_step,
+                    initially_on_at,
+                };
+                Some(StartLEDTimer {
+                    start_time: initially_on_at,
+                    next_at: initially_on_at + current_step as u32 * step_dur,
+                })
+            }
         }
     }
     pub fn set_red(&mut self) -> StartLEDTimer {
@@ -179,14 +205,14 @@ impl LedState {
         *self = LedState::Red {
             total_steps: TOTAL_LED_FADEOUT_STEPS,
             current_step: 0,
-            current_step_at: now,
+            initially_on_at: now,
         };
         const {
             assert!(TOTAL_LED_FADEOUT_STEPS != 0);
         };
         StartLEDTimer {
             start_time: now,
-            in_dur: MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
+            next_at: now + MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
         }
     }
     pub fn set_blue(&mut self) -> StartLEDTimer {
@@ -194,14 +220,14 @@ impl LedState {
         *self = LedState::Blue {
             total_steps: TOTAL_LED_FADEOUT_STEPS,
             current_step: 0,
-            current_step_at: now,
+            initially_on_at: now,
         };
         const {
             assert!(TOTAL_LED_FADEOUT_STEPS != 0);
         };
         StartLEDTimer {
             start_time: now,
-            in_dur: MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
+            next_at: now + MAX_LED_ON_TIME / TOTAL_LED_FADEOUT_STEPS as u32,
         }
     }
 }

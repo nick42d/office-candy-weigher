@@ -70,14 +70,36 @@ where
         .text_color(Rgb565::GREEN)
         .font(&FONT_10X20)
         .build();
+    let calib_value_style = eg_seven_segment::SevenSegmentStyleBuilder::new()
+        .digit_size(Size {
+            width: 10,
+            height: 20,
+        })
+        .segment_color(Rgb565::GREEN)
+        .build();
     match state {
         CalibrationState::TareCalibrated {
             latest_tare_calib_value,
         } => {
             Text::new(
-                "Tare callibration complete <Results tbc>. Place 50g weight on scale and press x to continue calibration.",
-                Point::new(10, 90),
+                "Tare callibration complete. Place 50g weight on scale and press x to continue calibration.",
+                Point::new(10, 30),
                 text_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+                .draw(display)
+                .unwrap();
+            // Max value is 2_147_483_647 (10 digits), add extra char for
+            // minus sign.
+            let mut raw_tare_str = heapless::String::<11>::new();
+            core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
+            Text::new(
+                &raw_tare_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22),
+                calib_value_style,
             )
             .draw(display)
             .unwrap();
@@ -85,22 +107,73 @@ where
         CalibrationState::CalibratingTare {
             latest_tare_calib_value,
         } => {
-            Text::new("CalibratingTareMessageTBC", Point::new(10, 90), text_style)
+            Text::new(
+                "Calibrating tare in progress.",
+                Point::new(10, 30),
+                text_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
                 .draw(display)
                 .unwrap();
+            // Max value is 2_147_483_647 (10 digits), add extra char for
+            // minus sign.
+            let mut raw_tare_str = heapless::String::<11>::new();
+            core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
+            Text::new(
+                &raw_tare_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22),
+                calib_value_style,
+            )
+            .draw(display)
+            .unwrap();
         }
         CalibrationState::Calibrating50g {
             latest_tare_calib_value,
             latest_50g_calib_value,
         } => {
-            Text::new("Calibrating25gMessageTBC", Point::new(10, 90), text_style)
+            Text::new(
+                "Calibrating with 50g weight in progress.",
+                Point::new(10, 30),
+                text_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
                 .draw(display)
                 .unwrap();
+            Text::new("Raw 50g", Point::new(10, 30 + 22 * 2), text_style)
+                .draw(display)
+                .unwrap();
+            // Max value is 2_147_483_647 (10 digits), add extra char for
+            // minus sign.
+            let mut raw_tare_str = heapless::String::<11>::new();
+            let mut raw_50g_str = heapless::String::<11>::new();
+            core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
+            core::write!(&mut raw_50g_str, "{}", latest_50g_calib_value.0 as i32).unwrap();
+            Text::new(
+                &raw_tare_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22),
+                calib_value_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new(
+                &raw_50g_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22 * 2),
+                calib_value_style,
+            )
+            .draw(display)
+            .unwrap();
         }
         CalibrationState::WaitingConfirmation => {
             Text::new(
                 "Remove all weight from the scale and press x to commence calibration.",
-                Point::new(10, 90),
+                Point::new(10, 30),
                 text_style,
             )
             .draw(display)
@@ -111,47 +184,47 @@ where
             latest_50g_calib_value,
         } => {
             Text::new(
-                "Calibration complete <Results tbc>. Press x to apply.",
-                Point::new(10, 90),
+                "Calibration complete. Press x to apply.",
+                Point::new(10, 30),
                 text_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+                .draw(display)
+                .unwrap();
+            Text::new("Raw 50g", Point::new(10, 30 + 22 * 2), text_style)
+                .draw(display)
+                .unwrap();
+            // Max value is 2_147_483_647 (10 digits), add extra char for
+            // minus sign.
+            let mut raw_tare_str = heapless::String::<11>::new();
+            let mut raw_50g_str = heapless::String::<11>::new();
+            core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
+            core::write!(&mut raw_50g_str, "{}", latest_50g_calib_value.0 as i32).unwrap();
+            Text::new(
+                &raw_tare_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22),
+                calib_value_style,
+            )
+            .draw(display)
+            .unwrap();
+            Text::new(
+                &raw_50g_str,
+                // Length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22 * 2),
+                calib_value_style,
             )
             .draw(display)
             .unwrap();
         }
         CalibrationState::Loading => {
-            Text::new("Loading...", Point::new(10, 90), text_style)
+            Text::new("Loading...", Point::new(10, 30), text_style)
                 .draw(display)
                 .unwrap();
         }
     }
-    // if let Some(calibration_value) = calibration_value {
-    //     // Max value is 2_147_483_647 (10 digits), add extra char for minus
-    // sign.     let mut calibration_value_str =
-    // heapless::String::<11>::new();     core::write!(&mut
-    // calibration_value_str, "{}", calibration_value as i32).unwrap();
-    //     let text_calibration_value = Text::new(
-    //         &calibration_value_str,
-    //         Point::new(10, 90),
-    //         eg_seven_segment::SevenSegmentStyleBuilder::new()
-    //             .digit_size(Size {
-    //                 width: 30,
-    //                 height: 50,
-    //             })
-    //             .segment_color(Rgb565::GREEN)
-    //             .build(),
-    //     );
-    //     text_calibration_value.draw(display).unwrap();
-    // } else {
-    //     let text_calibration_value = Text::new(
-    //         "Calibrating...",
-    //         Point::new(10, 90),
-    //         embedded_graphics::mono_font::MonoTextStyleBuilder::new()
-    //             .text_color(Rgb565::GREEN)
-    //             .font(&FONT_10X20)
-    //             .build(),
-    //     );
-    //     text_calibration_value.draw(display).unwrap();
-    // }
 }
 
 pub fn draw_saving_settings_screen<D>(display: &mut D)

@@ -55,11 +55,18 @@ impl<T> TimerFuture<T> {
 
 /// Helper type representing a future that waits for duration and then returns T
 /// - to allow it to be used in trait return type.
-// TODO: Consider triggering this at a specific time Instant instead of after a
-// duration.
-pub fn timer_future<T>(t: T, in_dur: embassy_time::Duration) -> TimerFuture<T> {
+pub fn timer_future_in<T>(t: T, in_dur: embassy_time::Duration) -> TimerFuture<T> {
     TimerFuture {
         timer: embassy_time::Timer::after(in_dur),
+        return_val: Some(t),
+    }
+}
+
+/// Helper type representing a future that returns T at the specified instant.
+/// - to allow it to be used in trait return type.
+pub fn timer_future_at<T>(t: T, at: embassy_time::Instant) -> TimerFuture<T> {
+    TimerFuture {
+        timer: embassy_time::Timer::at(at),
         return_val: Some(t),
     }
 }

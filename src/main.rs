@@ -15,7 +15,7 @@ use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
-use crate::utils::{TimerFuture, timer_future};
+use crate::utils::{TimerFuture, timer_future_at, timer_future_in};
 use defmt::*;
 use effect_lite::{Effect, EffectExt};
 use embassy_executor::{Executor, Spawner};
@@ -246,9 +246,9 @@ pub struct StartDimOrSleepDisplayTimer {
 }
 #[must_use]
 #[derive(Debug, defmt::Format)]
-struct StartLEDTimer {
+pub struct StartLEDTimer {
     start_time: Instant,
-    in_dur: Duration,
+    next_at: Instant,
 }
 
 impl<'a> Effect<&mut FlashController<'a>> for WriteConfig {
@@ -267,13 +267,19 @@ impl Effect<()> for StartDimOrSleepDisplayTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
         let StartDimOrSleepDisplayTimer { start_time, in_dur } = self;
-        timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
+        timer_future_in(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
     }
 }
 impl Effect<()> for StartLEDTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
-        let StartLEDTimer { start_time, in_dur } = self;
-        timer_future(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
+        let StartLEDTimer {
+            start_time,
+            next_at,
+        } = self;
+        timer_future_at(
+            Event::Timer(TimerEvent::FadeoutLEDs { start_time }),
+            next_at,
+        )
     }
 }
