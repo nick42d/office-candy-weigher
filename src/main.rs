@@ -176,11 +176,6 @@ async fn main(spawner: Spawner) {
     let mut futures_executor = heapless::Vec::<TimerFuture<Event>, MAX_EFFECTS>::new();
     let mut rng = RoscRng;
     loop {
-        // Interleave state transitions
-        // let state_transitions_future = match state.get_next_transitions() {
-        //     Some((t, f)) => futures::future::Either::Right(Timer::at(t).map(move |_|
-        // f)),     None =>
-        // futures::future::Either::Left(core::future::pending()), };
         let result = round_robin_select::round_robin_select(
             &mut poll_first_1,
             rx.receive(),
