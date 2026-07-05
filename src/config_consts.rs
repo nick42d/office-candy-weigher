@@ -12,10 +12,7 @@ use embassy_rp::{
     },
 };
 use embassy_time::Duration;
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::{RgbColor, WebColors},
-};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
 
 pub const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
 pub const TOTAL_LED_FADEOUT_STEPS: u16 = 8;

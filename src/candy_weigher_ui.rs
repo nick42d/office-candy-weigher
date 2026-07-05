@@ -81,14 +81,19 @@ where
         CalibrationState::TareCalibrated {
             latest_tare_calib_value,
         } => {
+            // Since display is 240 wide and we want to leave 10px padding, this is 22 chars
+            // per row.
             Text::new(
-                "Tare callibration complete. Place 50g weight on scale and press x to continue calibration.",
+                "Tare calibration compl
+ete. Place 50g weight o
+n scale and press x to
+continue calibration.",
                 Point::new(10, 30),
                 text_style,
             )
             .draw(display)
             .unwrap();
-            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+            Text::new("Raw Tare", Point::new(10, 30 + 22 * 4), text_style)
                 .draw(display)
                 .unwrap();
             // Max value is 2_147_483_647 (10 digits), add extra char for
@@ -97,24 +102,26 @@ where
             core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
             Text::new(
                 &raw_tare_str,
-                // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22),
+                // 10px + length of "Raw Tare" + 1 char padding
+                Point::new(10 + 8 * 10 + 10, 30 + 22 * 4),
                 calib_value_style,
             )
             .draw(display)
             .unwrap();
+            draw_corner_button(ButtonPos::BottomLeft, "X", ButtonState::Off, display).unwrap();
         }
         CalibrationState::CalibratingTare {
             latest_tare_calib_value,
         } => {
             Text::new(
-                "Calibrating tare in progress.",
+                "Calibrating tare in pr
+ogress.",
                 Point::new(10, 30),
                 text_style,
             )
             .draw(display)
             .unwrap();
-            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+            Text::new("Raw Tare", Point::new(10, 30 + 22 * 2), text_style)
                 .draw(display)
                 .unwrap();
             // Max value is 2_147_483_647 (10 digits), add extra char for
@@ -123,8 +130,8 @@ where
             core::write!(&mut raw_tare_str, "{}", latest_tare_calib_value.0 as i32).unwrap();
             Text::new(
                 &raw_tare_str,
-                // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22),
+                // 10px, plus length of "Raw Tare" + 1 char padding
+                Point::new(8 * 10 + 10, 30 + 22 * 2),
                 calib_value_style,
             )
             .draw(display)
@@ -135,16 +142,17 @@ where
             latest_50g_calib_value,
         } => {
             Text::new(
-                "Calibrating with 50g weight in progress.",
+                "Calibrating with 50g w
+eight in progress.",
                 Point::new(10, 30),
                 text_style,
             )
             .draw(display)
             .unwrap();
-            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+            Text::new("Raw Tare", Point::new(10, 30 + 22 * 2), text_style)
                 .draw(display)
                 .unwrap();
-            Text::new("Raw 50g", Point::new(10, 30 + 22 * 2), text_style)
+            Text::new("Raw 50g", Point::new(10, 30 + 22 * 3), text_style)
                 .draw(display)
                 .unwrap();
             // Max value is 2_147_483_647 (10 digits), add extra char for
@@ -155,8 +163,8 @@ where
             core::write!(&mut raw_50g_str, "{}", latest_50g_calib_value.0 as i32).unwrap();
             Text::new(
                 &raw_tare_str,
-                // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22),
+                // 10px, plus length of "Raw Tare" + 1 char padding
+                Point::new(10 + 8 * 10 + 10, 30 + 22 * 2),
                 calib_value_style,
             )
             .draw(display)
@@ -164,7 +172,7 @@ where
             Text::new(
                 &raw_50g_str,
                 // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22 * 2),
+                Point::new(10 + 8 * 10 + 10, 30 + 22 * 3),
                 calib_value_style,
             )
             .draw(display)
@@ -172,28 +180,33 @@ where
         }
         CalibrationState::WaitingConfirmation => {
             Text::new(
-                "Remove all weight from the scale and press x to commence calibration.",
+                "Remove all weight from
+ the scale and press x
+ to commence calibratio
+ n.",
                 Point::new(10, 30),
                 text_style,
             )
             .draw(display)
             .unwrap();
+            draw_corner_button(ButtonPos::BottomLeft, "X", ButtonState::Off, display).unwrap();
         }
         CalibrationState::Calibrated {
             latest_tare_calib_value,
             latest_50g_calib_value,
         } => {
             Text::new(
-                "Calibration complete. Press x to apply.",
+                "Calibration complete.
+Press x to apply.",
                 Point::new(10, 30),
                 text_style,
             )
             .draw(display)
             .unwrap();
-            Text::new("Raw Tare", Point::new(10, 30 + 22), text_style)
+            Text::new("Raw Tare", Point::new(10, 30 + 22 * 2), text_style)
                 .draw(display)
                 .unwrap();
-            Text::new("Raw 50g", Point::new(10, 30 + 22 * 2), text_style)
+            Text::new("Raw 50g", Point::new(10, 30 + 22 * 3), text_style)
                 .draw(display)
                 .unwrap();
             // Max value is 2_147_483_647 (10 digits), add extra char for
@@ -204,20 +217,21 @@ where
             core::write!(&mut raw_50g_str, "{}", latest_50g_calib_value.0 as i32).unwrap();
             Text::new(
                 &raw_tare_str,
-                // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22),
+                // 10px, plus length of "Raw Tare" + 1 char padding
+                Point::new(10 + 8 * 10 + 10, 30 + 22 * 2),
                 calib_value_style,
             )
             .draw(display)
             .unwrap();
             Text::new(
                 &raw_50g_str,
-                // Length of "Raw Tare" + 1 char padding
-                Point::new(8 * 10 + 10, 30 + 22 * 2),
+                // 10px, plus length of "Raw Tare" + 1 char padding
+                Point::new(10 + 8 * 10 + 10, 30 + 22 * 3),
                 calib_value_style,
             )
             .draw(display)
             .unwrap();
+            draw_corner_button(ButtonPos::BottomLeft, "X", ButtonState::Off, display).unwrap();
         }
         CalibrationState::Loading => {
             Text::new("Loading...", Point::new(10, 30), text_style)
@@ -234,7 +248,8 @@ where
 {
     display.clear(Rgb565::BLACK).unwrap();
     let text_calibration_value = Text::new(
-        "Settings saved - press X to continue",
+        "Settings saved - pres
+s X to continue",
         Point::new(10, 90),
         embedded_graphics::mono_font::MonoTextStyleBuilder::new()
             .text_color(Rgb565::GREEN)
@@ -242,6 +257,7 @@ where
             .build(),
     );
     text_calibration_value.draw(display).unwrap();
+    draw_corner_button(ButtonPos::BottomLeft, "X", ButtonState::Off, display).unwrap();
 }
 
 pub fn draw_main_screen<D>(
