@@ -24,14 +24,14 @@ pub enum TimerEvent {
 pub enum ButtonEvent {
     APressed,
     BPressed,
-    ARepeated,
-    BRepeated,
+    AHeld(f32),
+    BHeld(f32),
     AReleased,
     BReleased,
     XPressed,
     YPressed,
-    XHeld(f32),
-    YHeld(f32),
+    XRepeated,
+    YRepeated,
     XReleased,
     YReleased,
 }
@@ -125,35 +125,35 @@ impl Effect<&mut State> for Event {
             );
         }
         match self {
-            Event::Button(ButtonEvent::APressed) => {
+            Event::Button(ButtonEvent::YPressed) => {
                 state.lolly_weight_g += 0.1;
-                state.t_l_pressed = ButtonState::On;
+                state.y_pressed = ButtonState::On;
             }
-            Event::Button(ButtonEvent::ARepeated) => {
+            Event::Button(ButtonEvent::YRepeated) => {
                 state.lolly_weight_g += 0.1;
             }
-            Event::Button(ButtonEvent::AReleased) => {
-                state.t_l_pressed = ButtonState::Off;
-            }
-            Event::Button(ButtonEvent::BPressed) => {
-                state.lolly_weight_g -= 0.1;
-                state.b_l_pressed = ButtonState::On;
-            }
-            Event::Button(ButtonEvent::BRepeated) => {
-                state.lolly_weight_g -= 0.1;
-            }
-            Event::Button(ButtonEvent::BReleased) => {
-                state.b_l_pressed = ButtonState::Off;
+            Event::Button(ButtonEvent::YReleased) => {
+                state.y_pressed = ButtonState::Off;
             }
             Event::Button(ButtonEvent::XPressed) => {
+                state.lolly_weight_g -= 0.1;
+                state.x_pressed = ButtonState::On;
+            }
+            Event::Button(ButtonEvent::XRepeated) => {
+                state.lolly_weight_g -= 0.1;
+            }
+            Event::Button(ButtonEvent::XReleased) => {
+                state.x_pressed = ButtonState::Off;
+            }
+            Event::Button(ButtonEvent::BPressed) => {
                 state.saved_tared_scale_weight_g = state.scale_weight_g - state.tare_weight_g;
-                state.t_r_pressed = ButtonState::On;
+                state.b_pressed = ButtonState::On;
             }
-            Event::Button(ButtonEvent::YPressed) => {
+            Event::Button(ButtonEvent::APressed) => {
                 state.tare_weight_g = state.scale_weight_g;
-                state.b_r_pressed = ButtonState::On;
+                state.a_pressed = ButtonState::On;
             }
-            Event::Button(ButtonEvent::XHeld(progress)) if round_f32(progress * 100.0) == 100 => {
+            Event::Button(ButtonEvent::BHeld(progress)) if round_f32(progress * 100.0) == 100 => {
                 state.screen_shown = ScreenShown::SavingSettings;
                 write_config_effect = Some(crate::WriteConfig(Config {
                     tare_weight_dg: round_f32(state.tare_weight_g * 10.0),
@@ -164,19 +164,19 @@ impl Effect<&mut State> for Event {
                 }));
             }
             // Fallback, if progress not 100%.
-            Event::Button(ButtonEvent::XHeld(progress)) => {
-                state.t_r_pressed = ButtonState::Held(progress)
+            Event::Button(ButtonEvent::BHeld(progress)) => {
+                state.b_pressed = ButtonState::Held(progress)
             }
-            Event::Button(ButtonEvent::YHeld(progress)) if round_f32(progress * 100.0) == 100 => {
+            Event::Button(ButtonEvent::AHeld(progress)) if round_f32(progress * 100.0) == 100 => {
                 state.screen_shown = ScreenShown::Calibration(CalibrationState::Loading);
                 enter_or_progress_calibration_mode_effect = Some(EnterOrProgressCalibrationMode);
             }
             // Fallback, if progress not 100%.
-            Event::Button(ButtonEvent::YHeld(progress)) => {
-                state.b_r_pressed = ButtonState::Held(progress)
+            Event::Button(ButtonEvent::AHeld(progress)) => {
+                state.a_pressed = ButtonState::Held(progress)
             }
-            Event::Button(ButtonEvent::XReleased) => state.t_r_pressed = ButtonState::Off,
-            Event::Button(ButtonEvent::YReleased) => state.b_r_pressed = ButtonState::Off,
+            Event::Button(ButtonEvent::BReleased) => state.b_pressed = ButtonState::Off,
+            Event::Button(ButtonEvent::AReleased) => state.a_pressed = ButtonState::Off,
             Event::LoadCell(LoadCellEvent::WeightUpdate(w)) => {
                 let prev_tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
@@ -199,8 +199,14 @@ impl Effect<&mut State> for Event {
                 }
             }
             Event::LoadCell(LoadCellEvent::EnteredCalibMode) => {
-                state.screen_shown = ScreenShown::Calibration(CalibrationState::Loading);
-                backlight_timer_effect = Some(state.backlight_state.reset());
+                if matches!(
+                    state.screen_shown,
+                    ScreenShown::Calibration(CalibrationState::Loading)
+                ) {
+                    backlight_timer_effect = Some(state.backlight_state.reset());
+                    state.screen_shown =
+                        ScreenShown::Calibration(CalibrationState::WaitingConfirmation);
+                };
             }
             Event::LoadCell(LoadCellEvent::CalibTareWeightUpdate(w)) => {
                 match state.screen_shown {

@@ -298,8 +298,8 @@ pub fn draw_main_screen<D>(
     display.clear(Rgb565::BLACK).unwrap();
 
     draw_corner_button(ButtonPos::TopLeft, "+", t_l_state, display).unwrap();
-    draw_corner_button(ButtonPos::BottomLeft, "-", t_r_state, display).unwrap();
-    draw_corner_button(ButtonPos::TopRight, "R", b_l_state, display).unwrap();
+    draw_corner_button(ButtonPos::BottomLeft, "-", b_l_state, display).unwrap();
+    draw_corner_button(ButtonPos::TopRight, "R", t_r_state, display).unwrap();
     draw_corner_button(ButtonPos::BottomRight, "T", b_r_state, display).unwrap();
     text_scale_weight.draw(display).unwrap();
     text_lolly_weight.draw(display).unwrap();

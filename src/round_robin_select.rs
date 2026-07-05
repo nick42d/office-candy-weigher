@@ -109,7 +109,12 @@ pub fn unbiased_select_slice<'a, Fut: Future>(
     mut rng: impl rand::Rng,
     slice: Pin<&'a mut [Fut]>,
 ) -> RoundRobinSelectSlice<'a, Fut> {
-    let seed = rng.gen_range(0..slice.len());
+    // gen_range panics if range is empty, special cased below.
+    let seed = if !slice.is_empty() {
+        rng.gen_range(0..slice.len())
+    } else {
+        0
+    };
     RoundRobinSelectSlice {
         poll_next_idx: seed,
         inner: slice,
@@ -123,7 +128,7 @@ impl<'a, Fut: Future> Future for RoundRobinSelectSlice<'a, Fut> {
         #[inline(always)]
         fn pin_iter<T>(slice: Pin<&mut [T]>) -> impl Iterator<Item = Pin<&mut T>> {
             // Safety:
-            // This is from ebassy_futures::select::select_slice which refers to
+            // This is from embassy_futures::select::select_slice which refers to
             //   https://users.rust-lang.org/t/working-with-pinned-slices-are-there-any-structurally-pinning-vec-like-collection-types/50634/2
             unsafe {
                 slice
@@ -132,7 +137,12 @@ impl<'a, Fut: Future> Future for RoundRobinSelectSlice<'a, Fut> {
                     .map(|v| Pin::new_unchecked(v))
             }
         }
+        if self.inner.is_empty() {
+            return Poll::Pending;
+        }
         let poll_next_idx = self.poll_next_idx;
+        // Panic safety: self.inner isn't empty as checked above, so won't do mod 0
+        // here.
         self.poll_next_idx = (self.poll_next_idx + 1) % self.inner.len();
         for (i, fut) in pin_iter(self.inner.as_mut())
             .skip(poll_next_idx)

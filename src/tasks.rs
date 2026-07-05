@@ -67,13 +67,13 @@ pub async fn pico_display_button_a_manager(
     tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_a = Input::new(pin12, Pull::Up);
-    manage_repeating_button(
+    manage_holdable_button(
         button_a,
         Event::Button(ButtonEvent::APressed),
-        Event::Button(ButtonEvent::ARepeated),
+        |progress| Event::Button(ButtonEvent::AHeld(progress)),
         Event::Button(ButtonEvent::AReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
-        BUTTON_REPEAT_THRESHOLD,
+        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
     )
     .await;
@@ -84,13 +84,13 @@ pub async fn pico_display_button_b_manager(
     tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_b = Input::new(pin13, Pull::Up);
-    manage_repeating_button(
+    manage_holdable_button(
         button_b,
         Event::Button(ButtonEvent::BPressed),
-        Event::Button(ButtonEvent::BRepeated),
+        |progress| Event::Button(ButtonEvent::BHeld(progress)),
         Event::Button(ButtonEvent::BReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
-        BUTTON_REPEAT_THRESHOLD,
+        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
         tx,
     )
     .await;
@@ -101,13 +101,13 @@ pub async fn pico_display_button_x_manager(
     tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_x = Input::new(pin14, Pull::Up);
-    manage_holdable_button(
+    manage_repeating_button(
         button_x,
         Event::Button(ButtonEvent::XPressed),
-        |progress| Event::Button(ButtonEvent::XHeld(progress)),
+        Event::Button(ButtonEvent::XRepeated),
         Event::Button(ButtonEvent::XReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
-        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
+        BUTTON_REPEAT_THRESHOLD,
         tx,
     )
     .await;
@@ -118,13 +118,13 @@ pub async fn pico_display_button_y_manager(
     tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     let button_y = Input::new(pin15, Pull::Up);
-    manage_holdable_button(
+    manage_repeating_button(
         button_y,
         Event::Button(ButtonEvent::YPressed),
-        |progress| Event::Button(ButtonEvent::YHeld(progress)),
+        Event::Button(ButtonEvent::YRepeated),
         Event::Button(ButtonEvent::YReleased),
         BUTTON_LONG_PRESS_THRESHOLD,
-        BUTTON_LONG_PRESS_PROGRESS_CHUNKS,
+        BUTTON_REPEAT_THRESHOLD,
         tx,
     )
     .await;
