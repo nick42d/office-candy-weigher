@@ -175,6 +175,7 @@ async fn main(spawner: Spawner) {
     const MAX_EFFECTS: usize = 100;
     let mut futures_executor = heapless::Vec::<TimerFuture<Event>, MAX_EFFECTS>::new();
     let mut rng = RoscRng;
+
     loop {
         let result = round_robin_select::round_robin_select(
             &mut poll_first_1,
@@ -260,7 +261,10 @@ impl Effect<()> for StartDimOrSleepDisplayTimer {
     type Output = TimerFuture<Event>;
     fn resolve(self, _: ()) -> Self::Output {
         let StartDimOrSleepDisplayTimer { start_time, in_dur } = self;
-        timer_future_in(Event::Timer(TimerEvent::FadeoutLEDs { start_time }), in_dur)
+        timer_future_in(
+            Event::Timer(TimerEvent::DimOrSleepDisplay { start_time }),
+            in_dur,
+        )
     }
 }
 impl Effect<()> for StartLEDTimer {

@@ -184,7 +184,7 @@ impl Effect<&mut State> for Event {
 
                 state.scale_weight_g =
                     round_f32_dp(w.to_grams(state.scale_raw_tare, state.scale_raw_50g), 1);
-                defmt::info!("New scale weight: {}", state.scale_weight_g);
+                defmt::debug!("Calculated scale weight: {}", state.scale_weight_g);
                 let tared_scale_weight_g =
                     round_f32_dp(state.scale_weight_g - state.tare_weight_g, 1);
                 let lolly_count = round_f32(tared_scale_weight_g / state.lolly_weight_g);
