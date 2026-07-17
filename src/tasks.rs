@@ -2,8 +2,8 @@ use core::cell::RefCell;
 use core::num::NonZeroU32;
 
 use crate::config_consts::{
-    BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD, BUTTON_REPEAT_THRESHOLD,
-    LOW_BACKLIGHT_PERCENTAGE,
+    BATTERY_POLL_PERIOD, BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD,
+    BUTTON_REPEAT_THRESHOLD, LOW_BACKLIGHT_PERCENTAGE, get_battery_level,
 };
 use crate::hardware_controllers::PimoroniDisplayController;
 use crate::hardware_controllers::pimoroni_display_leds::Percentage;
@@ -13,9 +13,10 @@ use crate::{CORE1_SIGNAL, Event, Irqs, MESSAGE_CHANNEL_SIZE, candy_weigher_ui};
 use defmt::info;
 use embassy_futures::select::{Either, select};
 use embassy_rp::Peri;
+use embassy_rp::adc::{Adc, Channel, Config};
 use embassy_rp::gpio::{Input, Output, Pull};
 use embassy_rp::peripherals::{
-    DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
+    ADC, DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
     PIN_20, PIN_25, PIN_29, PIO1, PWM_SLICE2, SPI0,
 };
 use embassy_rp::pio::Pio;
@@ -214,13 +215,36 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
 pub async fn battery_pack_monitor(
     vsys_pin: Peri<'static, PIN_29>,
     wifi_cs_pin: Peri<'static, PIN_25>,
+    adc: Peri<'static, ADC>,
     tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
 ) {
     // Pico WH Quirk: PIN 25 (Wireless SPI CS) must be HIGH
     // to accurately read the VSYS voltage on PIN 29.
     let mut wifi_cs_pin = Output::new(wifi_cs_pin, embassy_rp::gpio::Level::High);
+    let mut vsys_pin = Channel::new_pin(vsys_pin, Pull::None);
+    let mut adc = Adc::new(adc, Irqs, Config::default());
 
-    // let mut vsys_pin = Channel::new_pin(p.PIN_29, Pull::None);
+    loop {
+        // every [BATTERY_POLL_PERIOD]
+        Timer::after(BATTERY_POLL_PERIOD).await;
+        let mut battery_readings_sum = 0.0;
+        // Take an average of 10 battery readings
+        for _ in 0..10 {
+            // Spaced once a second
+            Timer::after(Duration::from_secs(1)).await;
+            wifi_cs_pin.set_high();
+            let raw = adc.read(&mut vsys_pin).await.unwrap();
+            wifi_cs_pin.set_low();
+            // The ADC reference is 3.3V. VSYS is stepped down to 1/3 via a hardware
+            // divider.
+            let voltage = (raw as f32 / 4096.0) * 3.3 * 3.0;
+            battery_readings_sum += voltage;
+        }
+        tx.send(Event::BatteryMonitorUpdate(get_battery_level(
+            battery_readings_sum / 10.0,
+        )))
+        .await;
+    }
 }
 
 #[cfg(feature = "software-sim")]

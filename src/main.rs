@@ -20,6 +20,7 @@ use defmt::*;
 use effect_lite::Effect;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::Either;
+use embassy_rp::adc;
 use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::dma;
@@ -53,12 +54,14 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
     PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+    ADC_IRQ_FIFO => adc::InterruptHandler;
 });
 
 #[cfg(not(feature = "hardware-sim"))]
 bind_interrupts!(struct Irqs {
     PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+    ADC_IRQ_FIFO => adc::InterruptHandler;
 });
 
 mod candy_weigher_ui;
@@ -139,6 +142,7 @@ async fn main(spawner: Spawner) {
         battery_pack_monitor(
             peripherals.vsys_pin,
             peripherals.wifi_cs_pin,
+            peripherals.adc,
             MESSAGE_CHANNEL.sender(),
         )
         .unwrap(),
@@ -185,6 +189,12 @@ async fn main(spawner: Spawner) {
     const MAX_EFFECTS: usize = 100;
     let mut futures_executor = heapless::Vec::<TimerFuture<Event>, MAX_EFFECTS>::new();
     let mut rng = RoscRng;
+
+    // Start backlight timer effect immediately.
+    let initial_effect = state.backlight_state.reset();
+    let Ok(()) = futures_executor.push(initial_effect.resolve(())) else {
+        crate::panic!("Ran out of space in futures executor");
+    };
 
     loop {
         let result = round_robin_select::round_robin_select(
@@ -236,6 +246,7 @@ async fn main(spawner: Spawner) {
             "Executor state after resolving effects is {:?}",
             futures_executor.as_slice()
         );
+        debug!("Device state after resolving effects is {:?}", state);
         output_state(&mut state, &mut display_led_controller);
     }
 }

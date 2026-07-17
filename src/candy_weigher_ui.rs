@@ -1,6 +1,6 @@
 use crate::config_consts::{
-    BATTERY_ICON_OK_COLOUR, BUTTON_SEMICIRCLE_COLOUR, BUTTON_SEMICIRCLE_HELD_COLOUR,
-    BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER,
+    BATTERY_ICON_CRITICAL_COLOUR, BATTERY_ICON_OK_COLOUR, BUTTON_SEMICIRCLE_COLOUR,
+    BUTTON_SEMICIRCLE_HELD_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER,
 };
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
 use crate::state::{BatteryState, ButtonState, CalibrationState};
@@ -14,8 +14,9 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
 use embedded_icon::NewIcon;
+use embedded_icon::icons::mdi::size24px;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, defmt::Format)]
 #[expect(clippy::enum_variant_names)]
 pub enum DisplayState {
     MainScreen {
@@ -27,7 +28,7 @@ pub enum DisplayState {
         b_l_state: ButtonState,
         t_r_state: ButtonState,
         b_r_state: ButtonState,
-        battery_state: BatteryState,
+        battery_state: Option<BatteryState>,
     },
     CalibrationScreen(CalibrationState),
     SavingSettingsScreen,
@@ -276,7 +277,7 @@ pub fn draw_main_screen<D>(
     b_l_state: ButtonState,
     t_r_state: ButtonState,
     b_r_state: ButtonState,
-    battery_state: BatteryState,
+    battery_state: Option<BatteryState>,
     display: &mut D,
 ) where
     D: DrawTarget<Color = Rgb565>,
@@ -342,27 +343,38 @@ where
     Ok(())
 }
 
-fn draw_battery_indicator<D>(battery_state: BatteryState, display: &mut D) -> Result<(), D::Error>
+fn draw_battery_indicator<D>(
+    battery_state: Option<BatteryState>,
+    display: &mut D,
+) -> Result<(), D::Error>
 where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
+    // X: Right edge of screen, 1px padding
+    // Y: Middle of screen
+    let icon_pos = Point::new((DISPLAY_W - 24 - 1).into(), (DISPLAY_H / 2 - 24 / 2).into());
     match battery_state {
-        BatteryState::Unknown => {
-            let icon =
-                embedded_icon::icons::mdi::size24px::BatteryUnknown::new(BATTERY_ICON_OK_COLOUR);
-            // X: Right edge of screen, 1px padding
-            // Y: Middle of screen
-            Image::new(
-                &icon,
-                Point::new((DISPLAY_W - 24 - 1).into(), (DISPLAY_H / 2 - 24 / 2).into()),
-            )
-            .draw(display)
+        None => {
+            let icon = size24px::BatteryUnknown::new(BATTERY_ICON_OK_COLOUR);
+            Image::new(&icon, icon_pos).draw(display)
         }
-        BatteryState::High => todo!(),
-        BatteryState::Medium => todo!(),
-        BatteryState::Low => todo!(),
-        BatteryState::Critical => todo!(),
+        Some(BatteryState::High) => {
+            let icon = size24px::BatteryHigh::new(BATTERY_ICON_OK_COLOUR);
+            Image::new(&icon, icon_pos).draw(display)
+        }
+        Some(BatteryState::Medium) => {
+            let icon = size24px::BatteryMedium::new(BATTERY_ICON_OK_COLOUR);
+            Image::new(&icon, icon_pos).draw(display)
+        }
+        Some(BatteryState::Low) => {
+            let icon = size24px::BatteryLow::new(BATTERY_ICON_OK_COLOUR);
+            Image::new(&icon, icon_pos).draw(display)
+        }
+        Some(BatteryState::Critical) => {
+            let icon = size24px::BatteryOutline::new(BATTERY_ICON_CRITICAL_COLOUR);
+            Image::new(&icon, icon_pos).draw(display)
+        }
     }
 }
 

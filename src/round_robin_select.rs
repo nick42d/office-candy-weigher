@@ -145,16 +145,16 @@ impl<'a, Fut: Future> Future for RoundRobinSelectSlice<'a, Fut> {
         // here.
         self.poll_next_idx = (self.poll_next_idx + 1) % self.inner.len();
         for (i, fut) in pin_iter(self.inner.as_mut())
-            .skip(poll_next_idx)
             .enumerate()
+            .skip(poll_next_idx)
         {
             if let Poll::Ready(res) = fut.poll(cx) {
                 return Poll::Ready((res, i));
             }
         }
         for (i, fut) in pin_iter(self.inner.as_mut())
-            .take(poll_next_idx)
             .enumerate()
+            .take(poll_next_idx)
         {
             if let Poll::Ready(res) = fut.poll(cx) {
                 return Poll::Ready((res, i));

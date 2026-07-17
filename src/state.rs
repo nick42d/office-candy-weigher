@@ -14,6 +14,7 @@ use embassy_time::Instant;
 
 pub mod effect;
 
+#[derive(defmt::Format)]
 pub struct State {
     pub tare_weight_g: f32,
     pub scale_weight_g: f32,
@@ -31,10 +32,10 @@ pub struct State {
     pub last_display_state: Option<DisplayState>,
     pub last_led_state: Option<LedState>,
     pub screen_shown: ScreenShown,
-    pub battery_state: BatteryState,
+    pub battery_state: Option<BatteryState>,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, defmt::Format)]
 pub enum CalibrationState {
     Loading,
     WaitingConfirmation,
@@ -54,7 +55,7 @@ pub enum CalibrationState {
     },
 }
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(Default, PartialEq, Copy, Clone, defmt::Format)]
 pub enum ScreenShown {
     #[default]
     Main,
@@ -62,17 +63,15 @@ pub enum ScreenShown {
     SavingSettings,
 }
 
-#[derive(Eq, PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, defmt::Format)]
 pub enum DisplayBacklightState {
     Off,
     LowPower { on_at: Instant },
     On { on_at: Instant },
 }
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(defmt::Format, PartialEq, Copy, Clone, Debug)]
 pub enum BatteryState {
-    #[default]
-    Unknown,
     High,
     Medium,
     Low,
@@ -104,7 +103,10 @@ impl DisplayBacklightState {
                     in_dur,
                 })
             }
-            _ => None,
+            _ => {
+                defmt::warn!("Ignored transition");
+                None
+            }
         }
     }
     pub fn reset(&mut self) -> StartDimOrSleepDisplayTimer {
@@ -117,7 +119,7 @@ impl DisplayBacklightState {
     }
 }
 
-#[derive(Default, PartialEq, Clone, Copy)]
+#[derive(Default, PartialEq, Clone, Copy, defmt::Format)]
 pub enum ButtonState {
     #[default]
     Off,
@@ -125,7 +127,7 @@ pub enum ButtonState {
     On,
 }
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, defmt::Format)]
 pub enum LedState {
     #[default]
     Off,

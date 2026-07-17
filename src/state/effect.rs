@@ -1,7 +1,7 @@
 use crate::{
     EnterOrProgressCalibrationMode, StartDimOrSleepDisplayTimer, StartLEDTimer, WriteConfig,
     hardware_controllers::flash::Config,
-    state::{ButtonState, CalibrationState, ScreenShown, State, round_f32},
+    state::{BatteryState, ButtonState, CalibrationState, ScreenShown, State, round_f32},
     utils::{ScaleRawWeight, round_f32_dp},
 };
 use effect_lite::Effect;
@@ -12,7 +12,7 @@ pub enum Event {
     Button(ButtonEvent),
     LoadCell(LoadCellEvent),
     Timer(TimerEvent),
-    BatteryMonitor,
+    BatteryMonitorUpdate(BatteryState),
 }
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
@@ -268,7 +268,9 @@ impl Effect<&mut State> for Event {
             Event::Timer(TimerEvent::DimOrSleepDisplay { start_time }) => {
                 backlight_timer_effect = state.backlight_state.handle_transition(start_time);
             }
-            Event::BatteryMonitor => todo!(),
+            Event::BatteryMonitorUpdate(new_battery_state) => {
+                state.battery_state = Some(new_battery_state)
+            }
         };
         (
             write_config_effect,

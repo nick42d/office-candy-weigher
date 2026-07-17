@@ -1,18 +1,24 @@
 use core::num::NonZeroU32;
 
-use crate::{hardware_controllers::pimoroni_display_leds::Percentage, utils::ScaleRawWeight};
+use crate::{
+    hardware_controllers::pimoroni_display_leds::Percentage, state::BatteryState,
+    utils::ScaleRawWeight,
+};
 #[cfg(feature = "hardware-sim")]
 use embassy_rp::peripherals::{PIN_26, PIN_27, PIO0};
 use embassy_rp::{
     Peri,
     peripherals::{
-        CORE1, DMA_CH0, DMA_CH1, FLASH, PIN_6, PIN_7, PIN_8, PIN_10, PIN_11, PIN_12, PIN_13,
+        ADC, CORE1, DMA_CH0, DMA_CH1, FLASH, PIN_6, PIN_7, PIN_8, PIN_10, PIN_11, PIN_12, PIN_13,
         PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19, PIN_20, PIN_25, PIN_29, PIO1, PWM_SLICE2,
         PWM_SLICE3, PWM_SLICE4, SPI0,
     },
 };
 use embassy_time::Duration;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::{RgbColor, WebColors},
+};
 
 pub const DEFAULT_LOLLY_WEIGHT: f32 = 25.0;
 pub const TOTAL_LED_FADEOUT_STEPS: u16 = 8;
@@ -20,7 +26,8 @@ pub const MAX_LED_ON_TIME: Duration = Duration::from_millis(500);
 pub const BUTTON_TOOLTIP_COLOUR: Rgb565 = Rgb565::GREEN;
 pub const BUTTON_SEMICIRCLE_COLOUR: Rgb565 = Rgb565::WHITE;
 pub const BUTTON_SEMICIRCLE_HELD_COLOUR: Rgb565 = Rgb565::BLACK;
-pub const BATTERY_ICON_OK_COLOUR: Rgb565 = Rgb565::WHITE;
+pub const BATTERY_ICON_OK_COLOUR: Rgb565 = Rgb565::CSS_LIGHT_GRAY;
+pub const BATTERY_ICON_CRITICAL_COLOUR: Rgb565 = Rgb565::CSS_RED;
 pub const SEMICIRCLE_DIAMETER: u32 = 44;
 pub const LOW_BACKLIGHT_PERCENTAGE: Percentage = Percentage(20);
 pub const BUTTON_LONG_PRESS_THRESHOLD: Duration = Duration::from_millis(1000);
@@ -28,6 +35,7 @@ pub const BUTTON_LONG_PRESS_PROGRESS_CHUNKS: NonZeroU32 = NonZeroU32::new(10).un
 pub const BUTTON_REPEAT_THRESHOLD: Duration = Duration::from_millis(100);
 pub const TIME_TO_BACKLIGHT_LOW: Duration = Duration::from_secs(10);
 pub const TIME_FROM_BACKLIGHT_LOW_TO_OFF: Option<Duration> = Some(Duration::from_secs(60 * 5)); // 5 mins
+pub const BATTERY_POLL_PERIOD: Duration = Duration::from_secs(60 * 10); // 10 mins
 pub const DEFAULT_SCALE_RAW_TARE: ScaleRawWeight = ScaleRawWeight::from_raw(4190.0);
 pub const DEFAULT_SCALE_RAW_50G: ScaleRawWeight = ScaleRawWeight::from_raw(39807.0);
 
@@ -35,6 +43,17 @@ pub const DEFAULT_SCALE_RAW_50G: ScaleRawWeight = ScaleRawWeight::from_raw(39807
 // calibration weight, subtracting `SCALE_RAW_TARE` and dividing by 50.
 pub const fn scale_raw_1g_step(scale_raw_tare: f32, scale_raw_50g: f32) -> f32 {
     (scale_raw_50g - scale_raw_tare) / 50.0
+}
+
+// Conversion of battery voltage to a battery level.
+// Set up for 3x AA alkaline batteries.
+pub const fn get_battery_level(voltage: f32) -> BatteryState {
+    match voltage {
+        _ if voltage > 4.2 => BatteryState::High,
+        _ if voltage > 3.6 => BatteryState::Medium,
+        _ if voltage > 3.0 => BatteryState::Low,
+        _ => BatteryState::Critical,
+    }
 }
 
 // By constraining all peripherals used in the project to this struct, it gives
@@ -49,6 +68,7 @@ pub struct OfficeCandyWeigherPeripherals {
     pub core_1: Peri<'static, CORE1>,
     pub display_manager_spi: Peri<'static, SPI0>,
     pub hx710_pio: Peri<'static, PIO1>,
+    pub adc: Peri<'static, ADC>,
     #[cfg(feature = "hardware-sim")]
     pub rotary_encoder_pio: Peri<'static, PIO0>,
 
@@ -94,6 +114,7 @@ pub const fn assign_peripherals(
         display_manager_backlight_pin: peripherals.PIN_20,
         display_manager_pwm_slice: peripherals.PWM_SLICE2,
         display_manager_dma: peripherals.DMA_CH0,
+        adc: peripherals.ADC,
         vsys_pin: peripherals.PIN_29,
         wifi_cs_pin: peripherals.PIN_25,
         button_a_pin: peripherals.PIN_12,
