@@ -38,7 +38,7 @@ pub const fn round_f32_dp(x: f32, dp: u8) -> f32 {
     round_f32(x * factor) as f32 / factor
 }
 
-#[derive(Debug)]
+#[derive(Debug, defmt::Format)]
 #[pin_project]
 /// Struct for the [timer_future] method.
 pub struct TimerFuture<T> {

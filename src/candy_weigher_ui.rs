@@ -1,19 +1,22 @@
 use crate::config_consts::{
-    BUTTON_SEMICIRCLE_COLOUR, BUTTON_SEMICIRCLE_HELD_COLOUR, BUTTON_TOOLTIP_COLOUR,
-    SEMICIRCLE_DIAMETER,
+    BATTERY_ICON_OK_COLOUR, BUTTON_SEMICIRCLE_COLOUR, BUTTON_SEMICIRCLE_HELD_COLOUR,
+    BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER,
 };
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
-use crate::state::{ButtonState, CalibrationState};
+use crate::state::{BatteryState, ButtonState, CalibrationState};
 use crate::utils::round_f32;
 use core::fmt::Write;
+use embedded_graphics::image::Image;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Circle, PrimitiveStyle};
 use embedded_graphics::text::Text;
+use embedded_icon::NewIcon;
 
 #[derive(PartialEq, Clone)]
+#[expect(clippy::enum_variant_names)]
 pub enum DisplayState {
     MainScreen {
         scale_weight_g: f32,
@@ -24,6 +27,7 @@ pub enum DisplayState {
         b_l_state: ButtonState,
         t_r_state: ButtonState,
         b_r_state: ButtonState,
+        battery_state: BatteryState,
     },
     CalibrationScreen(CalibrationState),
     SavingSettingsScreen,
@@ -44,6 +48,7 @@ where
             b_l_state,
             t_r_state,
             b_r_state,
+            battery_state,
         } => draw_main_screen(
             scale_weight_g,
             lolly_weight_g,
@@ -53,6 +58,7 @@ where
             b_l_state,
             t_r_state,
             b_r_state,
+            battery_state,
             display,
         ),
         DisplayState::CalibrationScreen(state) => draw_calibration_screen(state, display),
@@ -260,6 +266,7 @@ s X to continue",
     draw_corner_button(ButtonPos::BottomLeft, "X", ButtonState::Off, display).unwrap();
 }
 
+#[expect(clippy::too_many_arguments)]
 pub fn draw_main_screen<D>(
     scale_weight_g: f32,
     lolly_weight_g: f32,
@@ -269,6 +276,7 @@ pub fn draw_main_screen<D>(
     b_l_state: ButtonState,
     t_r_state: ButtonState,
     b_r_state: ButtonState,
+    battery_state: BatteryState,
     display: &mut D,
 ) where
     D: DrawTarget<Color = Rgb565>,
@@ -317,10 +325,45 @@ pub fn draw_main_screen<D>(
     draw_corner_button(ButtonPos::BottomLeft, "-", b_l_state, display).unwrap();
     draw_corner_button(ButtonPos::TopRight, "R", t_r_state, display).unwrap();
     draw_corner_button(ButtonPos::BottomRight, "T", b_r_state, display).unwrap();
+    draw_battery_indicator(battery_state, display).unwrap();
+    draw_candy_image(display).unwrap();
     text_scale_weight.draw(display).unwrap();
     text_lolly_weight.draw(display).unwrap();
     text_lolly_count.draw(display).unwrap();
     text_lolly_change.draw(display).unwrap();
+}
+
+fn draw_candy_image<D>(display: &mut D) -> Result<(), D::Error>
+where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    // TODO!
+    Ok(())
+}
+
+fn draw_battery_indicator<D>(battery_state: BatteryState, display: &mut D) -> Result<(), D::Error>
+where
+    D: DrawTarget<Color = Rgb565>,
+    <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
+{
+    match battery_state {
+        BatteryState::Unknown => {
+            let icon =
+                embedded_icon::icons::mdi::size24px::BatteryUnknown::new(BATTERY_ICON_OK_COLOUR);
+            // X: Right edge of screen, 1px padding
+            // Y: Middle of screen
+            Image::new(
+                &icon,
+                Point::new((DISPLAY_W - 24 - 1).into(), (DISPLAY_H / 2 - 24 / 2).into()),
+            )
+            .draw(display)
+        }
+        BatteryState::High => todo!(),
+        BatteryState::Medium => todo!(),
+        BatteryState::Low => todo!(),
+        BatteryState::Critical => todo!(),
+    }
 }
 
 enum ButtonPos {

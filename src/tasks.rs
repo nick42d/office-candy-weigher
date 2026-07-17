@@ -13,10 +13,10 @@ use crate::{CORE1_SIGNAL, Event, Irqs, MESSAGE_CHANNEL_SIZE, candy_weigher_ui};
 use defmt::info;
 use embassy_futures::select::{Either, select};
 use embassy_rp::Peri;
-use embassy_rp::gpio::{Input, Pull};
+use embassy_rp::gpio::{Input, Output, Pull};
 use embassy_rp::peripherals::{
     DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
-    PIN_20, PIO1, PWM_SLICE2, SPI0,
+    PIN_20, PIN_25, PIN_29, PIO1, PWM_SLICE2, SPI0,
 };
 use embassy_rp::pio::Pio;
 use embassy_rp::spi::{self, Spi};
@@ -210,6 +210,19 @@ async fn manage_holdable_button<'a, M, Mutex, const BUTTON_CHANNEL_SIZE: usize>(
     }
 }
 
+#[embassy_executor::task]
+pub async fn battery_pack_monitor(
+    vsys_pin: Peri<'static, PIN_29>,
+    wifi_cs_pin: Peri<'static, PIN_25>,
+    tx: Sender<'static, ThreadModeRawMutex, Event, MESSAGE_CHANNEL_SIZE>,
+) {
+    // Pico WH Quirk: PIN 25 (Wireless SPI CS) must be HIGH
+    // to accurately read the VSYS voltage on PIN 29.
+    let mut wifi_cs_pin = Output::new(wifi_cs_pin, embassy_rp::gpio::Level::High);
+
+    // let mut vsys_pin = Channel::new_pin(p.PIN_29, Pull::None);
+}
+
 #[cfg(feature = "software-sim")]
 #[embassy_executor::task]
 pub async fn hx710_load_cell_manager_simulated(
@@ -337,6 +350,8 @@ pub async fn hx710_load_cell_manager(
                 // naturally throttle based on the HX710 sample rate (10-40Hz).
                 //
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
+                // TODO: Confirm if necessary, if load_cell.read() consumes the value,
+                // subsequent call may naturally wait anyway.
                 Timer::after(Duration::from_millis(10)).await;
             }
             tx.send(Event::LoadCell(LoadCellEvent::CalibTareWeightModeComplete))
@@ -359,6 +374,8 @@ pub async fn hx710_load_cell_manager(
                 // naturally throttle based on the HX710 sample rate (10-40Hz).
                 //
                 // Delay is smaller here as chewing battery not a concern in calibration mode.
+                // TODO: Confirm if necessary, if load_cell.read() consumes the value,
+                // subsequent call may naturally wait anyway.
                 Timer::after(Duration::from_millis(10)).await;
             }
             tx.send(Event::LoadCell(LoadCellEvent::CalibModeComplete))

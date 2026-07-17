@@ -30,6 +30,7 @@ effect-lite = { version = "0.2.0", path = "../effect-lite/effect-lite" }
 hx71x-pio = { version = "0.1.0", path = "../hx71x-pio", features = ["rp2040"] }
 # Pin to 0.8 for compatibility with embassy-rp 0.10
 rand = { version = "0.8", default-features = false }
+embedded-icon = "0.0.1"
 
 [profile.release]
 debug = 2

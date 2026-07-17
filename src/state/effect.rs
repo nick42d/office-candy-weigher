@@ -12,6 +12,7 @@ pub enum Event {
     Button(ButtonEvent),
     LoadCell(LoadCellEvent),
     Timer(TimerEvent),
+    BatteryMonitor,
 }
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
@@ -163,7 +164,6 @@ impl Effect<&mut State> for Event {
                     scale_raw_tare: state.scale_raw_tare,
                 }));
             }
-            // Fallback, if progress not 100%.
             Event::Button(ButtonEvent::BHeld(progress)) => {
                 state.b_pressed = ButtonState::Held(progress)
             }
@@ -171,7 +171,6 @@ impl Effect<&mut State> for Event {
                 state.screen_shown = ScreenShown::Calibration(CalibrationState::Loading);
                 enter_or_progress_calibration_mode_effect = Some(EnterOrProgressCalibrationMode);
             }
-            // Fallback, if progress not 100%.
             Event::Button(ButtonEvent::AHeld(progress)) => {
                 state.a_pressed = ButtonState::Held(progress)
             }
@@ -269,6 +268,7 @@ impl Effect<&mut State> for Event {
             Event::Timer(TimerEvent::DimOrSleepDisplay { start_time }) => {
                 backlight_timer_effect = state.backlight_state.handle_transition(start_time);
             }
+            Event::BatteryMonitor => todo!(),
         };
         (
             write_config_effect,

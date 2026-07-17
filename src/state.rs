@@ -31,6 +31,7 @@ pub struct State {
     pub last_display_state: Option<DisplayState>,
     pub last_led_state: Option<LedState>,
     pub screen_shown: ScreenShown,
+    pub battery_state: BatteryState,
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -66,6 +67,16 @@ pub enum DisplayBacklightState {
     Off,
     LowPower { on_at: Instant },
     On { on_at: Instant },
+}
+
+#[derive(Default, PartialEq, Copy, Clone)]
+pub enum BatteryState {
+    #[default]
+    Unknown,
+    High,
+    Medium,
+    Low,
+    Critical,
 }
 
 impl DisplayBacklightState {
@@ -253,6 +264,7 @@ impl Default for State {
             lolly_weight_g: DEFAULT_LOLLY_WEIGHT,
             scale_raw_tare: DEFAULT_SCALE_RAW_TARE,
             scale_raw_50g: DEFAULT_SCALE_RAW_50G,
+            battery_state: Default::default(),
         }
     }
 }
@@ -278,6 +290,7 @@ impl State {
                     t_r_state: self.b_pressed,
                     b_l_state: self.x_pressed,
                     b_r_state: self.a_pressed,
+                    battery_state: self.battery_state,
                 }
             }
             ScreenShown::Calibration(state) => DisplayState::CalibrationScreen(state),

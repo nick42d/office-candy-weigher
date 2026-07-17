@@ -9,7 +9,9 @@ use crate::hardware_controllers::{
 use crate::round_robin_select::{PollFirst2, unbiased_select_slice};
 use crate::state::effect::{Event, TimerEvent};
 use crate::state::{DisplayBacklightState, State, output_state};
-use crate::tasks::{display_manager, hx710_load_cell_manager, pico_display_button_a_manager};
+use crate::tasks::{
+    battery_pack_monitor, display_manager, hx710_load_cell_manager, pico_display_button_a_manager,
+};
 use crate::tasks::{
     pico_display_button_b_manager, pico_display_button_x_manager, pico_display_button_y_manager,
 };
@@ -134,6 +136,14 @@ async fn main(spawner: Spawner) {
         pico_display_button_y_manager(peripherals.button_y_pin, MESSAGE_CHANNEL.sender()).unwrap(),
     );
     spawner.spawn(
+        battery_pack_monitor(
+            peripherals.vsys_pin,
+            peripherals.wifi_cs_pin,
+            MESSAGE_CHANNEL.sender(),
+        )
+        .unwrap(),
+    );
+    spawner.spawn(
         hx710_load_cell_manager(
             peripherals.hx710_sclk_pin,
             peripherals.hx710_dout_pin,
@@ -222,6 +232,10 @@ async fn main(spawner: Spawner) {
                 crate::panic!("Ran out of space in futures executor");
             };
         }
+        debug!(
+            "Executor state after resolving effects is {:?}",
+            futures_executor.as_slice()
+        );
         output_state(&mut state, &mut display_led_controller);
     }
 }
