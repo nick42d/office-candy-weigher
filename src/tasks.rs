@@ -236,9 +236,9 @@ pub async fn battery_pack_monitor(
             let raw = adc.read(&mut vsys_pin).await.unwrap();
             wifi_cs_pin.set_low();
             // The ADC reference is 3.3V. VSYS is stepped down to 1/3 via a hardware
-            // divider.
-            let voltage = (raw as f32 / 4096.0) * 3.3 * 3.0;
-            battery_readings_sum += voltage;
+            // divider. Additionally, since we connected via USB, there is 0.2V drop.
+            let battery_voltage = (raw as f32 / 4096.0) * 3.3 * 3.0 + 0.2;
+            battery_readings_sum += battery_voltage;
         }
         tx.send(Event::BatteryMonitorUpdate(get_battery_level(
             battery_readings_sum / 10.0,
