@@ -264,11 +264,11 @@ where
     type Output = Either4<A::Output, B::Output, C::Output, D::Output>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let a = unsafe { Pin::new_unchecked(&mut this.a) };
-        let b = unsafe { Pin::new_unchecked(&mut this.b) };
-        let c = unsafe { Pin::new_unchecked(&mut this.c) };
-        let d = unsafe { Pin::new_unchecked(&mut this.d) };
+        let this = self.project();
+        let a: Pin<&mut A> = this.a;
+        let b: Pin<&mut B> = this.b;
+        let c: Pin<&mut C> = this.c;
+        let d: Pin<&mut D> = this.d;
         match this.poll_first {
             PollFirst4::A => {
                 this.poll_first.next();
