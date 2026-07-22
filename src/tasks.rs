@@ -2,7 +2,8 @@ use core::cell::RefCell;
 use core::num::NonZeroU32;
 
 use crate::config_consts::{
-    BATTERY_POLL_PERIOD, BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD,
+    BATTERY_NUMBER_READINGS, BATTERY_POLL_PERIOD, BATTERY_POLL_STARTUP_DELAY,
+    BATTERY_READING_SPACING, BUTTON_LONG_PRESS_PROGRESS_CHUNKS, BUTTON_LONG_PRESS_THRESHOLD,
     BUTTON_REPEAT_THRESHOLD, LOW_BACKLIGHT_PERCENTAGE, get_battery_level,
 };
 use crate::hardware_controllers::PimoroniDisplayController;
@@ -13,7 +14,7 @@ use crate::{CORE1_SIGNAL, Event, Irqs, MESSAGE_CHANNEL_SIZE, candy_weigher_ui};
 use defmt::info;
 use embassy_futures::select::{Either, select};
 use embassy_rp::Peri;
-use embassy_rp::adc::{Adc, Channel, Config};
+use embassy_rp::adc::{self, Adc, Config};
 use embassy_rp::gpio::{Input, Output, Pull};
 use embassy_rp::peripherals::{
     ADC, DMA_CH0, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, PIN_16, PIN_17, PIN_18, PIN_19,
@@ -220,30 +221,41 @@ pub async fn battery_pack_monitor(
 ) {
     // Pico WH Quirk: PIN 25 (Wireless SPI CS) must be HIGH
     // to accurately read the VSYS voltage on PIN 29.
-    let mut wifi_cs_pin = Output::new(wifi_cs_pin, embassy_rp::gpio::Level::High);
-    let mut vsys_pin = Channel::new_pin(vsys_pin, Pull::None);
+    let _wifi_cs_pin = Output::new(wifi_cs_pin, embassy_rp::gpio::Level::High);
+    let mut adc_channel = adc::Channel::new_pin(vsys_pin, Pull::None);
     let mut adc = Adc::new(adc, Irqs, Config::default());
 
+    // Wait briefly before taking first battery reading as
+    // chip may be using more power due to startup.
+    Timer::after(BATTERY_POLL_STARTUP_DELAY).await;
+
     loop {
-        // every [BATTERY_POLL_PERIOD]
-        Timer::after(BATTERY_POLL_PERIOD).await;
         let mut battery_readings_sum = 0.0;
-        // Take an average of 10 battery readings
-        for _ in 0..10 {
-            // Spaced once a second
-            Timer::after(Duration::from_secs(1)).await;
-            wifi_cs_pin.set_high();
-            let raw = adc.read(&mut vsys_pin).await.unwrap();
-            wifi_cs_pin.set_low();
-            // The ADC reference is 3.3V. VSYS is stepped down to 1/3 via a hardware
-            // divider. Additionally, since we connected via USB, there is 0.2V drop.
+        // Take an average of [BATTERY_NUMBER_READINGS] battery readings
+        for _ in 0..BATTERY_NUMBER_READINGS {
+            // Spaced once every [BATTERY_READING_SPACING]
+            Timer::after(BATTERY_READING_SPACING).await;
+            let raw = adc.read(&mut adc_channel).await.unwrap();
+            // Voltage calculation:
+            // - ADC has 4096 bits resolution.
+            // - ADC reference is 3.3V.
+            // - VSYS is stepped down to 1/3 via a hardware divider.
+            // - Additionally, since we connected via USB, add an estimated 0.2V drop for
+            //   the Schottky diode.
             let battery_voltage = (raw as f32 / 4096.0) * 3.3 * 3.0 + 0.2;
             battery_readings_sum += battery_voltage;
         }
+        let battery_voltage_average = battery_readings_sum / BATTERY_NUMBER_READINGS as f32;
+        defmt::debug!(
+            "Took averaged battery reading - {:?}v",
+            battery_voltage_average
+        );
         tx.send(Event::BatteryMonitorUpdate(get_battery_level(
-            battery_readings_sum / 10.0,
+            battery_voltage_average,
         )))
         .await;
+        // Every [BATTERY_POLL_PERIOD]
+        Timer::after(BATTERY_POLL_PERIOD).await;
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::config_consts::{
     BATTERY_ICON_CRITICAL_COLOUR, BATTERY_ICON_OK_COLOUR, BUTTON_SEMICIRCLE_COLOUR,
-    BUTTON_SEMICIRCLE_HELD_COLOUR, BUTTON_TOOLTIP_COLOUR, SEMICIRCLE_DIAMETER,
+    BUTTON_SEMICIRCLE_HELD_COLOUR, BUTTON_TOOLTIP_COLOUR, CANDY_ICON_COLOUR, SEMICIRCLE_DIAMETER,
 };
 use crate::hardware_controllers::pimoroni_display::{DISPLAY_H, DISPLAY_W};
 use crate::state::{BatteryState, ButtonState, CalibrationState};
@@ -305,7 +305,7 @@ pub fn draw_main_screen<D>(
     );
     let text_lolly_count = Text::new(
         &lolly_count_str,
-        Point::new(10, 90),
+        Point::new(2 + 48 + 2, 90),
         eg_seven_segment::SevenSegmentStyleBuilder::new()
             .digit_size(Size {
                 width: 30,
@@ -327,11 +327,11 @@ pub fn draw_main_screen<D>(
     draw_corner_button(ButtonPos::TopRight, "R", t_r_state, display).unwrap();
     draw_corner_button(ButtonPos::BottomRight, "T", b_r_state, display).unwrap();
     draw_battery_indicator(battery_state, display).unwrap();
-    draw_candy_image(display).unwrap();
     text_scale_weight.draw(display).unwrap();
     text_lolly_weight.draw(display).unwrap();
     text_lolly_count.draw(display).unwrap();
     text_lolly_change.draw(display).unwrap();
+    draw_candy_image(display).unwrap();
 }
 
 fn draw_candy_image<D>(display: &mut D) -> Result<(), D::Error>
@@ -339,8 +339,8 @@ where
     D: DrawTarget<Color = Rgb565>,
     <D as embedded_graphics::draw_target::DrawTarget>::Error: core::fmt::Debug,
 {
-    // TODO!
-    Ok(())
+    let icon = embedded_icon::mdi::size48px::Candy::new(CANDY_ICON_COLOUR);
+    Image::new(&icon, Point::new(2, DISPLAY_H as i32 / 2 - (48 / 2))).draw(display)
 }
 
 fn draw_battery_indicator<D>(

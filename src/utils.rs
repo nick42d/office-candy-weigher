@@ -23,7 +23,8 @@ impl ScaleRawWeight {
     }
 }
 
-/// Implementation of f32::round in no_std environment.
+/// Round `x` to the nearest [i32].
+/// Saturates if `x` is beyond the range of [i32].
 pub const fn round_f32(x: f32) -> i32 {
     if x >= 0.0 {
         (x + 0.5) as i32
